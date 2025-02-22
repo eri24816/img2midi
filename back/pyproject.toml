@@ -5,8 +5,12 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
     "numpy",
-    "opencv-python"
+    "opencv-python",
+    "matplotlib",
 ]
+
+[tool.hatch.build.targets.wheel]
+    packages = ["app"]
 
 [build-system]
 requires = ["hatchling"]

@@ -5,7 +5,7 @@ A starting point for a vue frontend + fastapi backend repo. It uses ts, vite, an
 ## install
 
 ```bash
-pip install -r back/requirements.txt
+pip install -e back
 cd front
 npm install
 ```

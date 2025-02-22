@@ -1,6 +1,6 @@
 <template>
     <div>
-        <h1>MFM</h1>
+        <h1>img2midi</h1>
         
         <div class="midi-section">
             <label for="midiOutput">MIDI Output Port:</label>
@@ -48,6 +48,7 @@
                 </div>
             </div>
         </div>
+        <Footer />
     </div>
 </template>
 
@@ -56,6 +57,7 @@ import { ref, onMounted } from 'vue';
 import { createMidiSender, MidiSender } from './util/MidiSender';
 import { ImagePlayer } from './util/ImagePlayer';
 import { Base64Binary } from './util/base64-binary';
+import Footer from './Footer.vue';
 interface ImageItem {
     id: number;
     imageUrl: string;
@@ -228,5 +230,14 @@ select {
 
 .column {
     margin: 10px;
+}
+
+footer {
+    text-align: center;
+    background-color: #000000;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    height: 60px;
 }
 </style>
