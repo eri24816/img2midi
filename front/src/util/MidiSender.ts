@@ -12,6 +12,9 @@ const CONTROL_CHANGE = 0xB0;
 export class MidiSender {
     public midi: MIDIAccess;
     private outPort: MIDIOutput | null = null;
+    public noteOnCallback: (note: number, velocity: number) => void = () => {};
+    public noteOffCallback: (note: number) => void = () => {};
+    public controlChangeCallback: (control: number, value: number) => void = () => {};
     constructor(midi: MIDIAccess) {
         this.midi = midi;
         for (const entry of midi.outputs) {
@@ -39,11 +42,13 @@ export class MidiSender {
     sendNoteOn(note: number, velocity: number) {
         if (!this.outPort) return console.error('No output port selected');
         this.outPort.send([NOTE_ON, note, velocity]);
+        this.noteOnCallback(note, velocity);
     }
 
     sendNoteOff(note: number) {
         if (!this.outPort) return console.error('No output port selected');
         this.outPort.send([NOTE_OFF, note, 0]);
+        this.noteOffCallback(note);
     }
 
     sendControlChange(control: number, value: number) {
@@ -56,5 +61,6 @@ export class MidiSender {
             value = 127;
         }
         this.outPort.send([CONTROL_CHANGE, control, value]);
+        this.controlChangeCallback(control, value);
     }
 }

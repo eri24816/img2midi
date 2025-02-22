@@ -3,7 +3,7 @@
         <h1>MFM</h1>
         
         <div class="midi-section">
-            <label for="midiOutput">MIDI Output:</label>
+            <label for="midiOutput">MIDI Output Port:</label>
             <select 
                 id="midiOutput" 
                 v-model="selectedOutput"
@@ -19,11 +19,14 @@
             </select>
         </div>
 
+        Upload image:
         <input type="file" @change="handleFileUpload" accept="image/*">
         
-        <table class="image-table">
-            <tr v-for="item in uploadedImages.values()" :key="item.id">
-                <td><img :src="item.imageUrl" width="200" /></td>
+        <div class="columns">
+            <div class="column">
+                <table class="image-table">
+                    <tr v-for="item in uploadedImages.values()" :key="item.id">
+                        <td><img :src="item.imageUrl" width="200" /></td>
                 <td>
                     <button 
                         @click="playImage(item)"
@@ -36,8 +39,15 @@
                 <td>
                     {{ item.dimensions.width }} x {{ item.dimensions.height }}
                 </td>
-            </tr>
-        </table>
+                    </tr>
+                </table>
+            </div>
+            <div class="column">
+                <div v-for="(message, index) in midiLog" :key="index">
+                    {{ message }}
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -69,7 +79,7 @@ interface AnalyzeResponse {
 const midiOutputs = ref<{id: string, name: string}[]>([]);
 const selectedOutput = ref<string | null>(null);
 const uploadedImages = ref<Map<number, ImageItem>>(new Map());
-
+const midiLog = ref<string[]>([]);
 const imagePlayers: ImagePlayer[] = [];
 
 let midiSender: MidiSender | null = null;
@@ -153,7 +163,29 @@ onMounted(async () => {
         selectedOutput.value = midiOutputs.value[0].id;
         handleOutputChange();
     }
+    midiSender.noteOnCallback = handleNoteOn;
+    midiSender.noteOffCallback = handleNoteOff;
+    midiSender.controlChangeCallback = handleControlChange;
 });
+
+const handleNoteOn = (note: number, velocity: number) => {
+    midiLog.value.push(`note on ${note} ${velocity}`);
+    trimMidiLog();
+}
+
+const handleNoteOff = (note: number) => {
+    midiLog.value.push(`note off ${note}`);
+    trimMidiLog();
+}
+
+const handleControlChange = (control: number, value: number) => {
+    midiLog.value.push(`control change ${control} ${value}`);
+    trimMidiLog();
+}
+
+const trimMidiLog = () => {
+    midiLog.value = midiLog.value.slice(-10);
+}
 </script>
 
 <style scoped>
@@ -186,5 +218,15 @@ select {
 .play-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.columns {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+}
+
+.column {
+    margin: 10px;
 }
 </style>
