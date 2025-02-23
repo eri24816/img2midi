@@ -19,10 +19,24 @@
             </select>
         </div>
 
-        <div class="time-scale-section">
-            <label for="timeScale">Playback speed (pixels per second)</label>
-            <input type="range" id="timeScale" v-model="timeScale" min="20" max="1000" />
-            <input type="number" id="timeScale" v-model="timeScale" min="20" max="1000" />
+        <div class="setting">
+            <label for="timeScale">Pixels per second (playback speed)</label>
+            <RangedInput id="timeScale" v-model="timeScale" :min="20" :max="1000" :step="20" />
+        </div>
+
+        <div class="setting">
+            <label for="pixelsPerSemitone">Pixels per semitone</label>
+            <RangedInput id="pixelsPerSemitone" v-model="pixelsPerSemitone" :min="10" :max="400" :step="10" />
+        </div>
+
+        <div class="setting">
+            <label for="channels">Output channels</label>
+            <RangedInput id="channels" v-model="channels" :min="1" :max="16" :step="1" />
+        </div>
+
+        <div class="setting">
+            <label for="pitchVariationFactor">Pitch variation factor</label>
+            <RangedInput id="pitchVariationFactor" v-model="pitchVariationFactor" :min="0" :max="1" :step="0.01" />
         </div>
 
         Upload image:
@@ -41,10 +55,10 @@
                         <td>
                             <button 
                                 @click="playImage(item)"
-                                :disabled="!item.parameters"
+                                :disabled="!item.strokes"
                                 class="play-button"
                             >
-                                {{ item.parameters ? 'Play' : 'Analyzing...' }}
+                                {{ item.strokes ? 'Play' : 'Analyzing...' }}
                             </button>
                         </td>
                         <td><img :src="item.imageUrl" width="200" /></td>
@@ -70,27 +84,34 @@
 <script setup lang="ts"> 
 import { ref, onMounted } from 'vue';
 import { createMidiSender, MidiSender } from './util/MidiSender';
-import { ImagePlayer } from './util/ImagePlayer';
+import { ImagePlayer, PolyphonicImagePlayer } from './util/ImagePlayer';
 import { Base64Binary } from './util/base64-binary';
 import Footer from './Footer.vue';
+import RangedInput from './components/RangedInput.vue';
 interface ImageItem {
     id: number;
     imageUrl: string;
     dimensions: {width: number, height: number};
-    parameters?: Map<string, Float32Array>;
-    control_length: number;
+    strokes?: StrokeInfo<Float32Array>[];
 }
-type AnalyzeResponse = StrokeInfo[];
-interface StrokeInfo {
+type AnalyzeResponse = StrokeInfo<number[]>[];
+
+interface StrokeInfo<ParamT> {
     length: number;
+    y_center: number;
+    y_start: number;
+    y_end: number;
+    x_center: number;
+    x_start: number;
+    x_end: number;
     parameters: {// base64 encoded float32 arrays
-        intensity: number[];
-        pitch: number[];
-        density: number[];
-        hue: number[];
-        saturation: number[];
-        value: number[];
-        x_position: number[];
+        intensity: ParamT;
+        pitch: ParamT;
+        density: ParamT;
+        hue: ParamT;
+        saturation: ParamT;
+        value: ParamT;
+        x_position: ParamT;
     }
 }
 
@@ -98,8 +119,11 @@ const midiOutputs = ref<{id: string, name: string}[]>([]);
 const selectedOutput = ref<string | null>(null);
 const uploadedImages = ref<Map<number, ImageItem>>(new Map());
 const midiLog = ref<string[]>([]);
-const imagePlayers: ImagePlayer[] = [];
 const timeScale = ref<number>(100);
+const pixelsPerSemitone = ref<number>(50);
+const channels = ref<number>(16);
+const player = new PolyphonicImagePlayer();
+const pitchVariationFactor = ref<number>(1);
 
 let midiSender: MidiSender | null = null;
 
@@ -126,8 +150,7 @@ const handleFileUpload = async (event: Event) => {
             dimensions: {
                 width: img.naturalWidth,
                 height: img.naturalHeight
-            },
-            control_length: 0
+            }
         };
         uploadedImages.value.set(newItem.id, newItem);
 
@@ -145,13 +168,17 @@ const handleFileUpload = async (event: Event) => {
                 });
                 
                 const responseJson: AnalyzeResponse = await response.json();
-                const parametersMap = new Map<string, Float32Array>();
-                const strokeInfo = responseJson[0];
-                for (const [key, value] of Object.entries(strokeInfo.parameters)) {
-                    parametersMap.set(key, new Float32Array(value));
+                function convertStrokeToFloat32Array(stroke: StrokeInfo<number[]>): StrokeInfo<Float32Array> {
+                    const result: StrokeInfo<Float32Array> = {
+                        ...stroke,
+                        parameters: Object.fromEntries(
+                            Object.entries(stroke.parameters).map(([key, value]) => [key, new Float32Array(value)])
+                        ) as StrokeInfo<Float32Array>['parameters']
+                    };
+                    return result;
                 }
-                uploadedImages.value.get(newItem.id).control_length = strokeInfo.length;
-                uploadedImages.value.get(newItem.id).parameters = parametersMap;
+                const strokes = responseJson.map(convertStrokeToFloat32Array);
+                uploadedImages.value.get(newItem.id).strokes = strokes;
             } catch (error) {
                 console.error('Analysis failed:', error);
             }
@@ -161,13 +188,16 @@ const handleFileUpload = async (event: Event) => {
     img.src = imageUrl;
 }
 
-const playImage = (item: ImageItem) => {
-    if (!item.parameters) return;
+const playImage = async (item: ImageItem) => {
+    if (!item.strokes) return;
     // TODO: Implement playback using parameters
-    if (imagePlayers.length === 0) {
-        imagePlayers.push(new ImagePlayer());
+    for (const stroke of item.strokes) {
+        const pitch = 54 + Math.round(stroke.y_center / pixelsPerSemitone.value);
+        const time = stroke.x_start / timeScale.value;
+        setTimeout(() => {
+            player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, pitchVariationFactor.value);
+        }, time* 1000);
     }
-    imagePlayers[0].play(item.parameters, midiSender, item.control_length, timeScale.value);
 }
 
 onMounted(async () => {
@@ -257,5 +287,19 @@ footer {
     bottom: 0;
     width: 100%;
     height: 60px;
+}
+
+.setting {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.setting label {
+    min-width: 250px;
 }
 </style>

@@ -39,19 +39,31 @@ export class MidiSender {
         }
     }
 
-    sendNoteOn(note: number, velocity: number) {
+    sendNoteOn(note: number, velocity: number, channel: number = 1) {
+        if (channel < 1 || channel > 16) {
+            console.error('Invalid channel', channel);
+            return;
+        }
         if (!this.outPort) return console.error('No output port selected');
-        this.outPort.send([NOTE_ON, note, velocity]);
+        this.outPort.send([NOTE_ON + channel - 1, note, velocity]);
         this.noteOnCallback(note, velocity);
     }
 
-    sendNoteOff(note: number) {
+    sendNoteOff(note: number, channel: number = 1) {
+        if (channel < 1 || channel > 16) {
+            console.error('Invalid channel', channel);
+            return;
+        }
         if (!this.outPort) return console.error('No output port selected');
-        this.outPort.send([NOTE_OFF, note, 0]);
+        this.outPort.send([NOTE_OFF + channel - 1, note, 0]);
         this.noteOffCallback(note);
     }
 
-    sendControlChange(control: number, value: number) {
+    sendControlChange(control: number, value: number, channel: number = 1) {
+        if (channel < 1 || channel > 16) {
+            console.error('Invalid channel', channel);
+            return;
+        }
         if (!this.outPort) return console.error('No output port selected');
         value = Math.round(value);
         if (value < 0) {
@@ -60,7 +72,7 @@ export class MidiSender {
         if (value > 127) {
             value = 127;
         }
-        this.outPort.send([CONTROL_CHANGE, control, value]);
+        this.outPort.send([CONTROL_CHANGE + channel - 1, control, value]);
         this.controlChangeCallback(control, value);
     }
 }

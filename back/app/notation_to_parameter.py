@@ -30,12 +30,14 @@ def find_stroke_contours(grayscale_image):
 
 
     # Smooth image to improve contour detection
-    blurred_image = cv2.GaussianBlur(binary_image, (5, 5), 0)
+    # blurred_image = cv2.GaussianBlur(binary_image, (3, 3), 0)
+    blurred_image = binary_image
 
 
     # Dilate to connect nearby regions
-    kernel = np.ones((5, 5), np.uint8)
+    kernel = np.ones((3, 3), np.uint8)
     dilated_image = cv2.dilate(blurred_image, kernel, iterations=1)
+    # dilated_image = blurred_image
 
     # Close gaps in strokes
     closed_image = cv2.morphologyEx(dilated_image, cv2.MORPH_CLOSE, kernel)
@@ -79,37 +81,55 @@ def get_center_of_mass(binary_image:np.ndarray):
 
 def get_largest_island(array:np.ndarray):
     """Get the largest island in the binary image"""
-    num_islands, islands = cv2.connectedComponents(array)
+    try:
+        num_islands, islands = cv2.connectedComponents(array)
+    except Exception as e:
+        print(array.shape)
+        raise e
     largest_island = np.argmax([np.sum(islands == i) for i in range(1,num_islands+1)]) + 1
     return islands == largest_island
 
-def get_margin(image:np.ndarray, x:int, y:int)->int:
+def get_margin(image:np.ndarray, x:int, y:int)->tuple[int, dict[str, int]]:
     """Get the margin around the point (x,y), which is the distance to the nearest zero pixel"""
     search_radius = 30
-    margin_r = search_radius
+
+    margin_l = 0
+    margin_r = 0
+    margin_u = 0
+    margin_d = 0
+
     for x_search in range(x, max(0, x-search_radius), -1):
         if image[y, x_search] == 0:
-            margin_r = abs(x - x_search)
+            margin_l = abs(x - x_search) - 1
             break
-    margin_l = search_radius
+        else:
+            margin_l = abs(x - x_search)
+
     for x_search in range(x+1, min(image.shape[1], x+search_radius)):
         if image[y, x_search] == 0:
-            margin_l = abs(x_search - x)
+            margin_r = abs(x_search - x) - 1
             break
-    margin_x = margin_r + margin_l
+        else:
+            margin_r = abs(x_search - x)
 
     margin_u = search_radius
     for y_search in range(y, max(0, y-search_radius), -1):
         if image[y_search, x] == 0:
-            margin_u = abs(y - y_search)
+            margin_u = abs(y - y_search) - 1
             break
-    margin_d = search_radius
+        else:
+            margin_u = abs(y - y_search)
+
     for y_search in range(y+1, min(image.shape[0], y+search_radius)):
         if image[y_search, x] == 0:
-            margin_d = abs(y_search - y)
+            margin_d = abs(y_search - y) - 1
             break
+        else:
+            margin_d = abs(y_search - y)
+
+    margin_x = margin_r + margin_l
     margin_y = margin_u + margin_d
-    return min(margin_x, margin_y)
+    return min(margin_x, margin_y), {'r':margin_r, 'l':margin_l, 'u':margin_u, 'd':margin_d}
 
 def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, raw_image:np.ndarray, hop = 3):
     """Convert a stroke to parameters"""
@@ -139,6 +159,7 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
         hue: float = 0
         saturation: float = 0
         value: float = 0
+        debug:dict = {}
 
     points: list[Point] = []
 
@@ -158,10 +179,13 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
         point.x = center_x
         point.y = center_y
 
-        margin = get_margin(binary_image, int(center_x), int(center_y))
+        margin, margin_dict = get_margin(binary_image, int(center_x), int(center_y))
         point.margin = margin
+        point.debug = {
+            'margin': margin_dict,
+        }
 
-        # get density. it is the mean of raw image pixels where binary image is 1 in the center_x slice
+        # get density. it is the mean of raw image pixels where b inary image is 1 in the center_x slice
         bin_slice = binary_image[top:bottom, int(center_x)]
         raw_slice = raw_image[top:bottom, int(center_x)]
         point.density = np.sum(bin_slice.astype(np.float32) * raw_slice.astype(np.float32)) / (np.sum(bin_slice)+1e-6) / 255
@@ -183,9 +207,14 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
         binary_image = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2BGR)
         # to 8 bit
         binary_image = binary_image.astype(np.float32) / 255
+        binary_image = cv2.resize(binary_image, (binary_image.shape[1]*4, binary_image.shape[0]*4), interpolation=cv2.INTER_NEAREST)
         for point in points:
-            cv2.circle(binary_image, (int(point.x), int(point.y)), int(point.margin//4), (150,120,0), -1)
-            #  add hsv text
+            cv2.circle(binary_image, (int(point.x)*4, int(point.y)*4), int(point.margin), (150,120,0), -1)
+            margin_dict = point.debug['margin']
+            # cv2.line(binary_image, (int(point.x)*4, int(point.y)*4), (int(point.x)*4 + margin_dict['r']*4, int(point.y)*4), (0,0,100), 2)
+            # cv2.line(binary_image, (int(point.x)*4, int(point.y)*4), (int(point.x)*4 - margin_dict['l']*4, int(point.y)*4), (0,0,100), 2)
+            # cv2.line(binary_image, (int(point.x)*4, int(point.y)*4), (int(point.x)*4, int(point.y)*4 + margin_dict['u']*4), (0,0,100), 2)
+            # cv2.line(binary_image, (int(point.x)*4, int(point.y)*4), (int(point.x)*4, int(point.y)*4 - margin_dict['d']*4), (0,0,100), 2)
         cv2.imshow('binary_image', binary_image)
         cv2.waitKey(0)
 
@@ -205,6 +234,12 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
 @dataclass
 class StrokeInfo:
     length: int
+    y_center: float
+    y_start: float
+    y_end: float
+    x_center: float
+    x_start: float
+    x_end: float
     parameters: dict[str, list]
 
 def notation_to_parameters(image_input) -> list[StrokeInfo]:
@@ -242,7 +277,7 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
         raise ValueError("Failed to load image")
 
     # Load and preprocess image
-    image = cv2.resize(image, (image.shape[1]//4, image.shape[0]//4))
+    image = cv2.resize(image, (image.shape[1]//2, image.shape[0]//2))
     border_size = round(image.shape[0] / 2)
     
     # Add white borders to give space for stroke analysis
@@ -276,9 +311,32 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
 
     # Process each stroke
     for stroke in strokes:
-        parameters = stroke_to_parameters(stroke, hsv_image, binary_image, grayscale_image)
+        stroke_boundary = cv2.boundingRect(stroke)
+        x, y, w, h = stroke_boundary
+        assert w > 0 and h > 0, "Stroke boundary is invalid"
+        roi_slice = slice(y, y+h), slice(x, x+w)
 
-        stroke_info_list.append(StrokeInfo(len(parameters['x_position']), parameters))
+        # shift the stroke with -x,-y
+        stroke = stroke - np.array([x, y])
+
+        parameters = stroke_to_parameters(stroke,
+            hsv_image[roi_slice],
+            binary_image[roi_slice], 
+            grayscale_image[roi_slice]
+        )
+        real_y = (image.shape[0] - y)*2
+        real_h = -h*2
+        real_x = x*2
+        real_w = w*2
+        stroke_info_list.append(StrokeInfo(len(parameters['x_position']),
+            y_center=real_y+real_h/2,
+            y_start=real_y,
+            y_end=real_y+real_h,
+            x_center=real_x+real_w/2,
+            x_start=real_x,
+            x_end=real_x+real_w,
+            parameters=parameters
+        ))
     
 
     # Visualization code
