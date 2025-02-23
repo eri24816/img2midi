@@ -39,14 +39,14 @@ export class ImagePlayer {
     private parameters: Map<string, Float32Array>;
     private midiSender: MidiSender;
     private time: number = 0;
-    private interval: number = 20;
     private length: number = 0;
-    private timeScale: number = 10;
+    private timeScale: number = 8.333;
 
     constructor() {
     }
     
-    async play(parameters: Map<string, Float32Array>, midiSender: MidiSender, length: number) {
+    async play(parameters: Map<string, Float32Array>, midiSender: MidiSender, length: number, timeScale: number = 8.333) {
+        this.timeScale = timeScale*8.333/100;
 
         this.parameters = parameters;
         this.midiSender = midiSender;
@@ -54,14 +54,12 @@ export class ImagePlayer {
         this.length = length;
         let noteOnSent = false;
         while (true) {
-            const idx = Math.floor(this.time / this.timeScale);
+            const idx = Math.floor(this.time * this.timeScale);
             if (idx >= this.length) {
                 this.midiSender.sendNoteOff(60);
-                console.log('note off');
                 break;
             }
             for (const [key, value] of this.parameters.entries()) {
-                console.log(key);
                 if (!(key in CONTROL_MAP)) {
                     continue;
                 }
@@ -81,8 +79,8 @@ export class ImagePlayer {
                 noteOnSent = true;
             }
 
-            this.time += this.interval;
-            await new Promise(resolve => setTimeout(resolve, this.interval));
+            this.time += 1/this.timeScale;
+            await new Promise(resolve => setTimeout(resolve, 1000/this.timeScale));
         }
     }
 

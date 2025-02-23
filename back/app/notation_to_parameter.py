@@ -1,3 +1,5 @@
+from collections import defaultdict
+from attr import dataclass
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,15 +18,20 @@ FREQUENCY_RANGE = 440 * np.power(2, (PITCH_RANGE-69)/12)
 MAX_ANALYSIS_HEIGHT = 200
 
 # Threshold for binary image conversion
-BINARY_THRESHOLD = 240
+BINARY_THRESHOLD = 200
 
 def find_stroke_contours(grayscale_image):
     """Find contours of strokes in the image"""
     # Convert to binary image
     _, binary_image = cv2.threshold(grayscale_image, BINARY_THRESHOLD, 255, cv2.THRESH_BINARY_INV)
 
+    # apply median blur to remove noise
+    binary_image = cv2.medianBlur(binary_image, 3)
+
+
     # Smooth image to improve contour detection
-    blurred_image = cv2.GaussianBlur(binary_image, (7, 7), 0)
+    blurred_image = cv2.GaussianBlur(binary_image, (5, 5), 0)
+
 
     # Dilate to connect nearby regions
     kernel = np.ones((5, 5), np.uint8)
@@ -33,9 +40,10 @@ def find_stroke_contours(grayscale_image):
     # Close gaps in strokes
     closed_image = cv2.morphologyEx(dilated_image, cv2.MORPH_CLOSE, kernel)
 
+
     # Find contours
     contours, _ = cv2.findContours(closed_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    return contours
+    return contours, cv2.threshold(closed_image, 100, 255, cv2.THRESH_BINARY)[1]
 
 def find_stroke_boundaries(image_slice, slice_width, y_offset, height):
     """Find top and bottom boundaries of a stroke in an image slice"""
@@ -63,7 +71,143 @@ def find_stroke_boundaries(image_slice, slice_width, y_offset, height):
     
     return y_offset + top_boundaries, y_offset + bottom_boundaries
 
-def notation_to_parameters(image_input) -> dict[str, np.ndarray]:
+def get_center_of_mass(binary_image:np.ndarray):
+    """Get the center of mass of the binary image"""
+    x_coord = np.arange(binary_image.shape[1]).reshape(1,-1).repeat(binary_image.shape[0], axis=0)
+    y_coord = np.arange(binary_image.shape[0]).reshape(-1,1).repeat(binary_image.shape[1], axis=1)
+    return np.sum(x_coord * binary_image) / np.sum(binary_image), np.sum(y_coord * binary_image) / np.sum(binary_image)
+
+def get_largest_island(array:np.ndarray):
+    """Get the largest island in the binary image"""
+    num_islands, islands = cv2.connectedComponents(array)
+    largest_island = np.argmax([np.sum(islands == i) for i in range(1,num_islands+1)]) + 1
+    return islands == largest_island
+
+def get_margin(image:np.ndarray, x:int, y:int)->int:
+    """Get the margin around the point (x,y), which is the distance to the nearest zero pixel"""
+    search_radius = 30
+    margin_r = search_radius
+    for x_search in range(x, max(0, x-search_radius), -1):
+        if image[y, x_search] == 0:
+            margin_r = abs(x - x_search)
+            break
+    margin_l = search_radius
+    for x_search in range(x+1, min(image.shape[1], x+search_radius)):
+        if image[y, x_search] == 0:
+            margin_l = abs(x_search - x)
+            break
+    margin_x = margin_r + margin_l
+
+    margin_u = search_radius
+    for y_search in range(y, max(0, y-search_radius), -1):
+        if image[y_search, x] == 0:
+            margin_u = abs(y - y_search)
+            break
+    margin_d = search_radius
+    for y_search in range(y+1, min(image.shape[0], y+search_radius)):
+        if image[y_search, x] == 0:
+            margin_d = abs(y_search - y)
+            break
+    margin_y = margin_u + margin_d
+    return min(margin_x, margin_y)
+
+def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, raw_image:np.ndarray, hop = 3):
+    """Convert a stroke to parameters"""
+    # invert raw image
+    raw_image = 255 - raw_image
+
+    rect = cv2.boundingRect(stroke)
+    left = rect[0]
+    right = rect[0] + rect[2]
+    top = 0
+    bottom = hsv_image.shape[0]
+
+    n = (right - left) // hop
+
+    slices = []
+    for i in range(n):
+        slices.append((left + i * hop, left + (i + 1) * hop))
+
+
+
+    @dataclass
+    class Point:
+        x: float = 0
+        y: float = 0
+        margin: int = 0
+        density: float = 0
+        hue: float = 0
+        saturation: float = 0
+        value: float = 0
+
+    points: list[Point] = []
+
+    for l, r in slices:
+        point = Point()
+        points.append(point)
+        center_x, _ = get_center_of_mass(binary_image[top:bottom, l:r])
+        if np.isnan(center_x):
+            center_x = (r - l) / 2
+        center_x += l
+        largest_vertical_island = get_largest_island(binary_image[top:bottom, int(center_x):int(center_x)+1])
+        center_y = np.sum(largest_vertical_island.flatten() * np.arange(top, bottom)) / np.sum(largest_vertical_island)
+        if np.isnan(center_y):
+            center_y = top + (bottom - top) / 2
+
+
+        point.x = center_x
+        point.y = center_y
+
+        margin = get_margin(binary_image, int(center_x), int(center_y))
+        point.margin = margin
+
+        # get density. it is the mean of raw image pixels where binary image is 1 in the center_x slice
+        bin_slice = binary_image[top:bottom, int(center_x)]
+        raw_slice = raw_image[top:bottom, int(center_x)]
+        point.density = np.sum(bin_slice.astype(np.float32) * raw_slice.astype(np.float32)) / (np.sum(bin_slice)+1e-6) / 255
+
+        # get hue, saturation, value. it is the mean of hsv image pixels where binary image is 1 in the center_x slice
+        hsv_slice = hsv_image[top:bottom, int(center_x)].astype(np.float32)
+        raw_slice = raw_image[top:bottom, int(center_x)].astype(np.float32)
+        point.hue = float(np.sum(raw_slice * hsv_slice[:,0]) / (np.sum(raw_slice)+1e-6))
+        point.saturation = float(np.sum(raw_slice * hsv_slice[:,1]) / (np.sum(raw_slice)+1e-6))
+        point.value = float(np.sum(raw_slice * hsv_slice[:,2]) / (np.sum(raw_slice)+1e-6))
+
+
+
+    # # show image with all centers of mass
+    # # Draw center of mass in red
+    # colorize the binary image with the margin
+
+    if SHOW_PLOTS:
+        binary_image = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2BGR)
+        # to 8 bit
+        binary_image = binary_image.astype(np.float32) / 255
+        for point in points:
+            cv2.circle(binary_image, (int(point.x), int(point.y)), int(point.margin//4), (150,120,0), -1)
+            #  add hsv text
+        cv2.imshow('binary_image', binary_image)
+        cv2.waitKey(0)
+
+    parameters: defaultdict[str, list] = defaultdict(list)
+    for point in points:
+        parameters['pitch'].append(point.y/hsv_image.shape[0] * (PITCH_RANGE[0]-PITCH_RANGE[1]) + PITCH_RANGE[1])
+        parameters['intensity'].append(point.margin / 30)
+        parameters['density'].append(point.density)
+        parameters['hue'].append(point.hue/255)
+        parameters['saturation'].append(point.saturation/255)
+        parameters['value'].append(point.value/255)
+        parameters['x_position'].append(point.x)
+
+    return parameters
+
+
+@dataclass
+class StrokeInfo:
+    length: int
+    parameters: dict[str, list]
+
+def notation_to_parameters(image_input) -> list[StrokeInfo]:
     """
     Converts an image of musical notation into various parameters for sound synthesis.
     
@@ -98,8 +242,7 @@ def notation_to_parameters(image_input) -> dict[str, np.ndarray]:
         raise ValueError("Failed to load image")
 
     # Load and preprocess image
-    image = cv2.resize(image, (1600, 100))
-    max_analysis_height = 100
+    image = cv2.resize(image, (image.shape[1]//4, image.shape[0]//4))
     border_size = round(image.shape[0] / 2)
     
     # Add white borders to give space for stroke analysis
@@ -116,128 +259,27 @@ def notation_to_parameters(image_input) -> dict[str, np.ndarray]:
     # Convert to different color spaces for analysis
     grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    image_height = image.shape[0]
-    image_width = image.shape[1]
-    
+
     # Find strokes in the image
-    strokes = find_stroke_contours(grayscale_image)
+    strokes, binary_image = find_stroke_contours(grayscale_image)
+
     
     # For visualization if SHOW_PLOTS=True
     visualization_image = image.copy()
     cv2.drawContours(visualization_image, strokes, -1, (0, 255, 0), 2)
     
-    # Analysis parameters
-    analysis_step = 10  # Distance between analysis points
-    analysis_width = analysis_step * 2  # Width of analysis window
-
-    # Initialize lists to store parameters
-    stroke_pitches = []
-    stroke_intensities = []
-    stroke_densities = []
-    stroke_hues = []
-    stroke_saturations = []
-    stroke_values = []
-    x_positions = []
 
     assert len(strokes) > 0, "No strokes found in the image"
-    assert len(strokes) <= 1, "Currently only one stroke is supported. Found {} strokes".format(len(strokes))
+
     
+    stroke_info_list: list[StrokeInfo] = []
+
     # Process each stroke
     for stroke in strokes:
-        x, y, width, height = cv2.boundingRect(stroke)
-        
-        # Initialize lists for current stroke measurements
-        intensity_measurements = []
-        pitch_measurements = []
-        density_measurements = []
-        hue_measurements = []
-        value_measurements = []
-        saturation_measurements = []
-        stroke_angles = []
-        x_positions = [range(x, x + width - analysis_width, analysis_step)] + x_positions
-        
-        # Analyze stroke from left to right
-        for current_x in x_positions[0]:
-            slice_width = min(analysis_width, x + width - current_x)
-            image_slice = grayscale_image[y:y + height, current_x:current_x + slice_width]
-            
-            # Find stroke boundaries
-            top_edges, bottom_edges = find_stroke_boundaries(image_slice, slice_width, y, image_height)
-            midline = (top_edges + bottom_edges) / 2
-            slice_height = min(max_analysis_height, round(np.max(top_edges) - np.min(bottom_edges)))
-            
-            # Calculate stroke angle and rotate analysis window
-            center_x = (current_x + slice_width / 2)
-            center_y = np.mean(midline)
-            stroke_angle = np.arctan2(1, np.mean(np.diff(midline)))
-            stroke_angles.append(stroke_angle)
-            rotation_matrix = cv2.getRotationMatrix2D((float(center_x), float(center_y)), -np.degrees(stroke_angle)+90, 1.0)
-            rotated_image = cv2.warpAffine(hsv_image, rotation_matrix, (image_width, image_height))
-            slice_hsv = cv2.getRectSubPix(rotated_image, (slice_width, slice_height), (float(center_x), float(center_y)))
-            slice_bgr = cv2.cvtColor(slice_hsv, cv2.COLOR_HSV2BGR)
-            slice_gray = cv2.cvtColor(slice_bgr, cv2.COLOR_BGR2GRAY)
-            
-            # Get rotated boundaries
-            top_edges, bottom_edges = find_stroke_boundaries(slice_gray, slice_width, 0, slice_height)
-            
-            # Calculate stroke width (intensity)
-            stroke_width = np.mean(top_edges - bottom_edges)
-            intensity_measurements.append(stroke_width / max_analysis_height)  # Normalize by max height
-            
-            # Calculate pitch from vertical position
-            vertical_position = center_y
-            pitch = (1 - vertical_position / image_height) * (PITCH_RANGE[1] - PITCH_RANGE[0]) + PITCH_RANGE[0]
-            pitch_measurements.append(np.mean(pitch))
-            
-            # Extract pixels for color analysis
-            gray_pixels = []
-            hsv_pixels = []
-            stroke_pixels = []
-            total_pixels = []
-            for x_offset in range(slice_width):
-                for y_offset in range(int(bottom_edges[x_offset]), int(top_edges[x_offset])):
-                    if slice_gray[y_offset, x_offset] <= 223:
-                        gray_pixels.append(slice_gray[y_offset, x_offset])
-                        hsv_pixels.append(slice_hsv[y_offset, x_offset, :])
-                        stroke_pixels.append((y_offset, x_offset))
-                    total_pixels.append((y_offset, x_offset))
-            gray_pixels = np.array(gray_pixels)
-            hsv_pixels = np.array(hsv_pixels)
-            stroke_pixels = np.array(stroke_pixels)
-            total_pixels = np.array(total_pixels)
-            
-            # Calculate density and color attributes
-            if stroke_pixels.shape[0] > 0:
-                density = stroke_pixels.shape[0] / total_pixels.shape[0]
-                mean_hue = np.mean(hsv_pixels[:, 0])
-                mean_saturation = np.mean(hsv_pixels[:, 1])
-                mean_value = np.mean(hsv_pixels[:, 2])
-            else:
-                density = 0
-                mean_hue = 0
-                mean_saturation = 0
-                mean_value = 0
-            
-            density_measurements.append(density)
-            hue_measurements.append(mean_hue)
-            saturation_measurements.append(mean_saturation / 256)
-            value_measurements.append(mean_value / 256)
-        
-        # Add stroke measurements to overall lists using append
-        stroke_intensities.append(intensity_measurements)
-        stroke_pitches.append(pitch_measurements)
-        stroke_densities.append(density_measurements)
-        stroke_hues.append(hue_measurements)
-        stroke_saturations.append(saturation_measurements)
-        stroke_values.append(value_measurements)
+        parameters = stroke_to_parameters(stroke, hsv_image, binary_image, grayscale_image)
 
-    # reverse the lists and convert to numpy arrays
-    stroke_intensities = np.array(stroke_intensities[::-1])
-    stroke_pitches = np.array(stroke_pitches[::-1])
-    stroke_densities = np.array(stroke_densities[::-1])
-    stroke_hues = np.array(stroke_hues[::-1])
-    stroke_saturations = np.array(stroke_saturations[::-1])
-    stroke_values = np.array(stroke_values[::-1])
+        stroke_info_list.append(StrokeInfo(len(parameters['x_position']), parameters))
+    
 
     # Visualization code
     if SHOW_PLOTS:
@@ -247,54 +289,53 @@ def notation_to_parameters(image_input) -> dict[str, np.ndarray]:
         plt.show()
         
         plt.figure(figsize=(14, 8))
-        for i, (intensity, pitch, density, hue, saturation, value, x) in enumerate(zip(
-                stroke_intensities, stroke_pitches, 
-                stroke_densities, stroke_hues, 
-                stroke_saturations, stroke_values, x_positions)):
+        for i, stroke_info in enumerate(stroke_info_list):
+            parameters = stroke_info.parameters
             plt.subplot(3, 2, 1)
-            plt.plot(x, pitch, label=f'Stroke {i+1} pitch')
+            plt.plot(parameters['x_position'], parameters['pitch'], label=f'Stroke {i+1} pitch')
             plt.title("Pitch (MIDI note)")
             plt.legend()
             
             plt.subplot(3, 2, 3)
-            plt.plot(x, intensity, label=f'Stroke {i+1} width')
+            plt.plot(parameters['x_position'], parameters['intensity'], label=f'Stroke {i+1} width')
             plt.title("Width (intensity)")
             
             plt.subplot(3, 2, 5)
-            plt.plot(x, density, label=f'Stroke {i+1} density')
+            plt.plot(parameters['x_position'], parameters['density'], label=f'Stroke {i+1} density')
             plt.title("Density")
             
             plt.subplot(3, 2, 2)
-            plt.plot(x, hue, label=f'Stroke {i+1} hue')
+            plt.plot(parameters['x_position'], parameters['hue'], label=f'Stroke {i+1} hue')
             plt.title("Hue")
             
             plt.subplot(3, 2, 4)
-            plt.plot(x, saturation, label=f'Stroke {i+1} saturation')
+            plt.plot(parameters['x_position'], parameters['saturation'], label=f'Stroke {i+1} saturation')
             plt.title("Saturation")
             
             plt.subplot(3, 2, 6)
-            plt.plot(x, value, label=f'Stroke {i+1} value')
+            plt.plot(parameters['x_position'], parameters['value'], label=f'Stroke {i+1} value')
             plt.xlabel("Position")
             plt.title("Value")
 
         plt.tight_layout()
         plt.show()
-        
-    # Normalize x positions
-    for i in range(len(x_positions)):
-        x_positions[i] = (np.array(x_positions[i]) / image_width)
-    x_positions = np.array(x_positions)
 
-    print(stroke_intensities)
+
+    # # Normalize x positions
+    # for i in range(len(x_positions)):
+    #     x_positions[i] = (np.array(x_positions[i]) / image_width)
+    # x_positions = np.array(x_positions)
+
+    # print(stroke_intensities)
     
-    result = {
-        'intensity': stroke_intensities,
-        'pitch': stroke_pitches,
-        'density': stroke_densities,
-        'hue': stroke_hues,
-        'saturation': stroke_saturations,
-        'value': stroke_values,
-        'x_position': x_positions
-    }
+    # result = {
+    #     'intensity': stroke_intensities,
+    #     'pitch': stroke_pitches,
+    #     'density': stroke_densities,
+    #     'hue': stroke_hues,
+    #     'saturation': stroke_saturations,
+    #     'value': stroke_values,
+    #     'x_position': x_positions
+    # }
 
-    return result
+    return stroke_info_list

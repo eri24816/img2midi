@@ -29,17 +29,10 @@ async def analyze_notation(request: Request):
         body = await request.body()
         body = json.loads(body.decode('utf-8'))
         image_bytes = base64.b64decode(body['image'])
-        parameters = notation_to_parameters(image_bytes)
-        result = {}
-        result['control_length'] = parameters['intensity'].shape[1]
-
-        for key, value in parameters.items():
-            parameters[key] = value.tolist()
-
-        result['parameters'] = parameters
-        print(result)
+        stroke_info_list = notation_to_parameters(image_bytes)
+        
             
-        return result
+        return stroke_info_list
     
     except Exception as e:
         traceback.print_exc()

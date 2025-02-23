@@ -19,26 +19,41 @@
             </select>
         </div>
 
+        <div class="time-scale-section">
+            <label for="timeScale">Playback speed (pixels per second)</label>
+            <input type="range" id="timeScale" v-model="timeScale" min="20" max="1000" />
+            <input type="number" id="timeScale" v-model="timeScale" min="20" max="1000" />
+        </div>
+
         Upload image:
         <input type="file" @change="handleFileUpload" accept="image/*">
         
         <div class="columns">
             <div class="column">
                 <table class="image-table">
+                    <tr>
+                        <th>Play</th>
+                        <th>Image</th>
+                        <th>Image size</th>
+                        <th>Duration</th>
+                    </tr>
                     <tr v-for="item in uploadedImages.values()" :key="item.id">
+                        <td>
+                            <button 
+                                @click="playImage(item)"
+                                :disabled="!item.parameters"
+                                class="play-button"
+                            >
+                                {{ item.parameters ? 'Play' : 'Analyzing...' }}
+                            </button>
+                        </td>
                         <td><img :src="item.imageUrl" width="200" /></td>
-                <td>
-                    <button 
-                        @click="playImage(item)"
-                        :disabled="!item.parameters"
-                        class="play-button"
-                    >
-                        {{ item.parameters ? 'Play' : 'Analyzing...' }}
-                    </button>
-                </td>
-                <td>
-                    {{ item.dimensions.width }} x {{ item.dimensions.height }}
-                </td>
+                        <td>
+                            {{ item.dimensions.width }} x {{ item.dimensions.height }} pixels
+                        </td>
+                        <td>
+                            {{ (item.dimensions.width / timeScale).toFixed(2) }} seconds
+                        </td>
                     </tr>
                 </table>
             </div>
@@ -65,8 +80,9 @@ interface ImageItem {
     parameters?: Map<string, Float32Array>;
     control_length: number;
 }
-interface AnalyzeResponse {
-    control_length: number;
+type AnalyzeResponse = StrokeInfo[];
+interface StrokeInfo {
+    length: number;
     parameters: {// base64 encoded float32 arrays
         intensity: number[];
         pitch: number[];
@@ -83,6 +99,7 @@ const selectedOutput = ref<string | null>(null);
 const uploadedImages = ref<Map<number, ImageItem>>(new Map());
 const midiLog = ref<string[]>([]);
 const imagePlayers: ImagePlayer[] = [];
+const timeScale = ref<number>(100);
 
 let midiSender: MidiSender | null = null;
 
@@ -129,10 +146,11 @@ const handleFileUpload = async (event: Event) => {
                 
                 const responseJson: AnalyzeResponse = await response.json();
                 const parametersMap = new Map<string, Float32Array>();
-                for (const [key, value] of Object.entries(responseJson.parameters)) {
-                    parametersMap.set(key, new Float32Array(value[0]));
+                const strokeInfo = responseJson[0];
+                for (const [key, value] of Object.entries(strokeInfo.parameters)) {
+                    parametersMap.set(key, new Float32Array(value));
                 }
-                uploadedImages.value.get(newItem.id).control_length = responseJson.control_length;
+                uploadedImages.value.get(newItem.id).control_length = strokeInfo.length;
                 uploadedImages.value.get(newItem.id).parameters = parametersMap;
             } catch (error) {
                 console.error('Analysis failed:', error);
@@ -149,7 +167,7 @@ const playImage = (item: ImageItem) => {
     if (imagePlayers.length === 0) {
         imagePlayers.push(new ImagePlayer());
     }
-    imagePlayers[0].play(item.parameters, midiSender, item.control_length);
+    imagePlayers[0].play(item.parameters, midiSender, item.control_length, timeScale.value);
 }
 
 onMounted(async () => {
