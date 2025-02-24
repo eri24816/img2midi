@@ -131,7 +131,7 @@ def get_margin(image:np.ndarray, x:int, y:int)->tuple[int, dict[str, int]]:
     margin_y = margin_u + margin_d
     return min(margin_x, margin_y), {'r':margin_r, 'l':margin_l, 'u':margin_u, 'd':margin_d}
 
-def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, raw_image:np.ndarray, hop = 3):
+def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, raw_image:np.ndarray, x_shift: float, y_shift: float, img_height: int, hop = 3):
     """Convert a stroke to parameters"""
     # invert raw image
     raw_image = 255 - raw_image
@@ -223,27 +223,25 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
 
     parameters: defaultdict[str, list] = defaultdict(list)
     for point in points:
-        parameters['pitch'].append(point.y/hsv_image.shape[0] * (PITCH_RANGE[0]-PITCH_RANGE[1]) + PITCH_RANGE[1])
         parameters['intensity'].append(point.margin / 30)
         parameters['density'].append(point.density)
         parameters['hue'].append(point.hue/255)
         parameters['saturation'].append(point.saturation/255)
         parameters['value'].append(point.value/255)
-        parameters['x_position'].append(point.x)
+        parameters['pos_x'].append(2*(point.x + x_shift))
+        parameters['pos_y'].append(2*(img_height - (point.y + y_shift)))
 
-    return parameters
+    return dict(parameters)
 
 
 @dataclass
 class StrokeInfo:
+    start_x: int
+    start_y: int
+    end_x: int
+    end_y: int
     length: int
-    y_center: float
-    y_start: float
-    y_end: float
-    x_center: float
-    x_start: float
-    x_end: float
-    parameters: dict[str, list]
+    parameters: dict[str, list] = field(default_factory=dict)
 
 def notation_to_parameters(image_input) -> list[StrokeInfo]:
     """
@@ -266,7 +264,7 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
             - hue: List of hue values for each stroke
             - saturation: List of saturation values for each stroke
             - value: List of brightness values for each stroke
-            - x_position: List of x-coordinates for each measurement point
+            - pos_x: List of x-coordinates for each measurement point
     """
     # Load image from either file path or bytes
     if isinstance(image_input, str):
@@ -281,18 +279,18 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
 
     # Load and preprocess image
     image = cv2.resize(image, (image.shape[1]//2, image.shape[0]//2))
-    border_size = round(image.shape[0] / 2)
+    # border_size = round(image.shape[0] / 2)
     
-    # Add white borders to give space for stroke analysis
-    image = cv2.copyMakeBorder(
-        image,
-        top=border_size,
-        bottom=border_size,
-        left=0,
-        right=0,
-        borderType=cv2.BORDER_CONSTANT,
-        value=(255, 255, 255)
-    )
+    # # Add white borders to give space for stroke analysis
+    # image = cv2.copyMakeBorder(
+    #     image,
+    #     top=border_size,
+    #     bottom=border_size,
+    #     left=0,
+    #     right=0,
+    #     borderType=cv2.BORDER_CONSTANT,
+    #     value=(255, 255, 255)
+    # )
     
     # Convert to different color spaces for analysis
     grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -305,10 +303,6 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
     # For visualization if SHOW_PLOTS=True
     visualization_image = image.copy()
     cv2.drawContours(visualization_image, strokes, -1, (0, 255, 0), 2)
-    
-
-    assert len(strokes) > 0, "No strokes found in the image"
-
     
     stroke_info_list: list[StrokeInfo] = []
 
@@ -325,21 +319,20 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
         parameters = stroke_to_parameters(stroke,
             hsv_image[roi_slice],
             binary_image[roi_slice], 
-            grayscale_image[roi_slice]
+            grayscale_image[roi_slice],
+            x,
+            y,
+            image.shape[0]
         )
-        real_y = (image.shape[0] - y)*2
-        real_h = -h*2
-        real_x = x*2
-        real_w = w*2
-        stroke_info_list.append(StrokeInfo(len(parameters['x_position']),
-            y_center=real_y+real_h/2,
-            y_start=real_y,
-            y_end=real_y+real_h,
-            x_center=real_x+real_w/2,
-            x_start=real_x,
-            x_end=real_x+real_w,
-            parameters=parameters
-        ))
+        if len(parameters['pos_x']) > 0:
+            stroke_info_list.append(StrokeInfo(
+                start_x=parameters['pos_x'][0],
+                start_y=parameters['pos_y'][0],
+                end_x=parameters['pos_x'][-1],
+                end_y=parameters['pos_y'][-1],
+                length=len(parameters['pos_x']),
+                parameters=parameters
+            ))
     
 
     # Visualization code
@@ -353,28 +346,28 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
         for i, stroke_info in enumerate(stroke_info_list):
             parameters = stroke_info.parameters
             plt.subplot(3, 2, 1)
-            plt.plot(parameters['x_position'], parameters['pitch'], label=f'Stroke {i+1} pitch')
+            plt.plot(parameters['pos_x'], parameters['pitch'], label=f'Stroke {i+1} pitch')
             plt.title("Pitch (MIDI note)")
             plt.legend()
             
             plt.subplot(3, 2, 3)
-            plt.plot(parameters['x_position'], parameters['intensity'], label=f'Stroke {i+1} width')
+            plt.plot(parameters['pos_x'], parameters['intensity'], label=f'Stroke {i+1} width')
             plt.title("Width (intensity)")
             
             plt.subplot(3, 2, 5)
-            plt.plot(parameters['x_position'], parameters['density'], label=f'Stroke {i+1} density')
+            plt.plot(parameters['pos_x'], parameters['density'], label=f'Stroke {i+1} density')
             plt.title("Density")
             
             plt.subplot(3, 2, 2)
-            plt.plot(parameters['x_position'], parameters['hue'], label=f'Stroke {i+1} hue')
+            plt.plot(parameters['pos_x'], parameters['hue'], label=f'Stroke {i+1} hue')
             plt.title("Hue")
             
             plt.subplot(3, 2, 4)
-            plt.plot(parameters['x_position'], parameters['saturation'], label=f'Stroke {i+1} saturation')
+            plt.plot(parameters['pos_x'], parameters['saturation'], label=f'Stroke {i+1} saturation')
             plt.title("Saturation")
             
             plt.subplot(3, 2, 6)
-            plt.plot(parameters['x_position'], parameters['value'], label=f'Stroke {i+1} value')
+            plt.plot(parameters['pos_x'], parameters['value'], label=f'Stroke {i+1} value')
             plt.xlabel("Position")
             plt.title("Value")
 
@@ -383,9 +376,9 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
 
 
     # # Normalize x positions
-    # for i in range(len(x_positions)):
-    #     x_positions[i] = (np.array(x_positions[i]) / image_width)
-    # x_positions = np.array(x_positions)
+    # for i in range(len(pos_xs)):
+    #     pos_xs[i] = (np.array(pos_xs[i]) / image_width)
+    # pos_xs = np.array(pos_xs)
 
     # print(stroke_intensities)
     
@@ -396,7 +389,7 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
     #     'hue': stroke_hues,
     #     'saturation': stroke_saturations,
     #     'value': stroke_values,
-    #     'x_position': x_positions
+    #     'pos_x': pos_xs
     # }
 
     return stroke_info_list

@@ -11,11 +11,6 @@ const CONTROL_MAP = {
         'sourceMin': 0,
         'sourceMax': 1,
     },
-    'pitch': {
-        'control': 76,
-        'sourceMin': -4,
-        'sourceMax': 4,
-    },
     'hue': {
         'control': 77,
         'sourceMin': 0,
@@ -63,11 +58,11 @@ export class MultiImagePlayer {
     constructor() {
     }
 
-    async play(parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1) {
+    async play(parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1, posYShift: number = 0) {
         const channel = this.getOneFreeChannel();
         const player = new ImagePlayer(channel);
         this.players.push(player);
-        await player.play(channel, parameters, midiSender, length, pitch, timeScale, pitchVariationFactor);
+        await player.play(channel, parameters, midiSender, length, pitch, timeScale, pitchVariationFactor, posYShift);
         this.players = this.players.filter(element => element !== player);
     }
     
@@ -100,7 +95,7 @@ export class ImagePlayer {
         this.stopped = true;
     }
     
-    async play(channel: number, parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1) {
+    async play(channel: number, parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1, posYShift: number = 0) {
         this.timeScale = timeScale*16.666/100;
         this.channel = channel;
         console.log(parameters['hue']);
@@ -120,30 +115,31 @@ export class ImagePlayer {
                 break;
             }
             for (const [key, value] of Object.entries(this.parameters)) {
+
+                if (key === 'pos_y') {
+                    const pitchBendSemitone = (value![idx] + posYShift) * pitchVariationFactor
+                    debugger
+                    const pitchBendValue = Math.round(pitchBendSemitone * 8192 / 12);
+                    this.midiSender.sendPitchBend(pitchBendValue, this.channel);
+                    continue;
+                }
+                
+
                 if (!(key in CONTROL_MAP)) {
                     continue;
                 }
+
+
                 const controlKey = key as ControlKey;
                 const control = CONTROL_MAP[controlKey].control;
                 let factor = 1;
-                if (controlKey === 'pitch') {
-                    factor = pitchVariationFactor;
-                }
                 const sourceMin = CONTROL_MAP[controlKey].sourceMin;
                 const sourceMax = CONTROL_MAP[controlKey].sourceMax;
                 let targetMin = 0
                 let targetMax = 127
-                if (controlKey === 'pitch') {
-                    targetMin = -8192;
-                    targetMax = 8191;
-                }
                 let targetValue = (value![idx] * factor - sourceMin) / (sourceMax - sourceMin) * (targetMax - targetMin) + targetMin;
 
-                if (controlKey === 'pitch') {
-                    this.midiSender.sendPitchBend(targetValue, this.channel);
-                } else {
-                    this.midiSender.sendControlChange(control, targetValue, this.channel);
-                }
+                this.midiSender.sendControlChange(control, targetValue, this.channel);
             }
 
             if (!noteOnSent) {

@@ -98,20 +98,18 @@ type AnalyzeResponse = StrokeInfo<number[]>[];
 
 interface StrokeInfo<ParamT> {
     length: number;
-    y_center: number;
-    y_start: number;
-    y_end: number;
-    x_center: number;
-    x_start: number;
-    x_end: number;
+    start_x: number;
+    start_y: number;
+    end_x: number;
+    end_y: number;
     parameters: {// base64 encoded float32 arrays
         intensity: ParamT;
-        pitch: ParamT;
+        pos_y: ParamT;
         density: ParamT;
         hue: ParamT;
         saturation: ParamT;
         value: ParamT;
-        x_position: ParamT;
+        pos_x: ParamT;
     }
 }
 
@@ -192,10 +190,12 @@ const playImage = async (item: ImageItem) => {
     if (!item.strokes) return;
     // TODO: Implement playback using parameters
     for (const stroke of item.strokes) {
-        const pitch = 54 + Math.round(stroke.y_center / pixelsPerSemitone.value);
-        const time = stroke.x_start / timeScale.value;
+        const pitch = 55 + Math.round(stroke.start_y / pixelsPerSemitone.value);
+        const posYShift = - Math.round(stroke.start_y / pixelsPerSemitone.value) * pixelsPerSemitone.value;
+        const time = stroke.start_x / timeScale.value;
+        const semitonePerPixelForVariation = pitchVariationFactor.value / pixelsPerSemitone.value;
         setTimeout(() => {
-            player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, pitchVariationFactor.value);
+            player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift);
         }, time* 1000);
     }
 }
