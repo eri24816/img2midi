@@ -163,6 +163,8 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
 
     points: list[Point] = []
 
+ 
+
     for l, r in slices:
         point = Point()
         points.append(point)
@@ -193,6 +195,7 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
         # get hue, saturation, value. it is the mean of hsv image pixels where binary image is 1 in the center_x slice
         hsv_slice = hsv_image[top:bottom, int(center_x)].astype(np.float32)
         raw_slice = raw_image[top:bottom, int(center_x)].astype(np.float32)
+
         point.hue = float(np.sum(raw_slice * hsv_slice[:,0]) / (np.sum(raw_slice)+1e-6))
         point.saturation = float(np.sum(raw_slice * hsv_slice[:,1]) / (np.sum(raw_slice)+1e-6))
         point.value = float(np.sum(raw_slice * hsv_slice[:,2]) / (np.sum(raw_slice)+1e-6))

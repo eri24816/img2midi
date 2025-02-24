@@ -82,9 +82,9 @@
 </template>
 
 <script setup lang="ts"> 
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { createMidiSender, MidiSender } from './util/MidiSender';
-import { ImagePlayer, PolyphonicImagePlayer } from './util/ImagePlayer';
+import { ImagePlayer, MultiImagePlayer } from './util/ImagePlayer';
 import { Base64Binary } from './util/base64-binary';
 import Footer from './Footer.vue';
 import RangedInput from './components/RangedInput.vue';
@@ -122,7 +122,7 @@ const midiLog = ref<string[]>([]);
 const timeScale = ref<number>(100);
 const pixelsPerSemitone = ref<number>(50);
 const channels = ref<number>(16);
-const player = new PolyphonicImagePlayer();
+const player = new MultiImagePlayer();
 const pitchVariationFactor = ref<number>(1);
 
 let midiSender: MidiSender | null = null;
@@ -216,26 +216,36 @@ onMounted(async () => {
     midiSender.noteOnCallback = handleNoteOn;
     midiSender.noteOffCallback = handleNoteOff;
     midiSender.controlChangeCallback = handleControlChange;
+    midiSender.pitchBendCallback = handlePitchBend;
 });
 
-const handleNoteOn = (note: number, velocity: number) => {
-    midiLog.value.push(`note on ${note} ${velocity}`);
+const handleNoteOn = (note: number, velocity: number, channel: number) => {
+    midiLog.value.push(`note on ${channel} ${note} ${velocity}`);
     trimMidiLog();
 }
 
-const handleNoteOff = (note: number) => {
-    midiLog.value.push(`note off ${note}`);
+const handleNoteOff = (note: number, channel: number) => {
+    midiLog.value.push(`note off ${channel} ${note}`);
     trimMidiLog();
 }
 
-const handleControlChange = (control: number, value: number) => {
-    midiLog.value.push(`control change ${control} ${value}`);
+const handleControlChange = (control: number, value: number, channel: number) => {
+    midiLog.value.push(`control change ${channel} ${control} ${value}`);
+    trimMidiLog();
+}
+
+const handlePitchBend = (value: number, channel: number) => {
+    midiLog.value.push(`pitch bend ${channel} ${value}`);
     trimMidiLog();
 }
 
 const trimMidiLog = () => {
     midiLog.value = midiLog.value.slice(-10);
 }
+
+watch(channels, (newChannels) => {
+    player.setChannels(Array.from({length: newChannels}, (_, i) => i + 1)); // from 1 to newChannels
+});
 </script>
 
 <style scoped>
