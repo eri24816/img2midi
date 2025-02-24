@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -159,7 +159,7 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
         hue: float = 0
         saturation: float = 0
         value: float = 0
-        debug:dict = {}
+        debug:dict = field(default_factory=dict)
 
     points: list[Point] = []
 

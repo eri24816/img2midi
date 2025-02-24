@@ -16,7 +16,7 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts: ['localhost', '127.0.0.1', 'image-midi.eri24816.tw'],
+    allowedHosts: ['localhost', '127.0.0.1', 'img2midi.eri24816.tw'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
