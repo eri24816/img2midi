@@ -58,14 +58,22 @@ export class MultiImagePlayer {
     constructor() {
     }
 
-    async play(parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1, posYShift: number = 0) {
+    play(parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1, posYShift: number = 0) {
         const channel = this.getOneFreeChannel();
         const player = new ImagePlayer(channel);
         this.players.push(player);
-        await player.play(channel, parameters, midiSender, length, pitch, timeScale, pitchVariationFactor, posYShift);
-        this.players = this.players.filter(element => element !== player);
+        player.play(channel, parameters, midiSender, length, pitch, timeScale, pitchVariationFactor, posYShift).then(() => {
+            this.stop(player);
+        });
+        return () => {
+            this.stop(player);
+        }
     }
     
+    private stop(player: ImagePlayer) {
+        player.stop();
+        this.players = this.players.filter(element => element !== player);
+    }
 }
 
 export class ImagePlayer {
@@ -74,10 +82,9 @@ export class ImagePlayer {
     private time: number = 0;
     private length: number = 0;
     private timeScale: number = 16.666;
-    private pitch: number = 0;
+    pitch: number = 0;
     private stopped: boolean = false;
     channel: number;
-
     constructor(channel: number) {
         this.channel = channel;
     }

@@ -22,8 +22,8 @@ export class MidiSender {
     public outNoteOffCallback: (note: number, channel: number) => void = () => {};
     public outControlChangeCallback: (control: number, value: number, channel: number) => void = () => {};
     public outPitchBendCallback: (value: number, channel: number) => void = () => {};
-    public inUnknownCallback: (status: number, message: number[]) => void = () => {};
-    public outUnknownCallback: (status: number, message: number[]) => void = () => {};
+    public inUnknownCallback: (status: number, channel: number, message: number[]) => void = () => {};
+    public outUnknownCallback: (status: number, channel: number, message: number[]) => void = () => {};
     constructor(midi: MIDIAccess) {
         this.midi = midi;
         for (const entry of midi.outputs) {
@@ -72,19 +72,23 @@ export class MidiSender {
     handleMidiMessage(event: MIDIMessageEvent) {
         const data = event.data;
         const message = Array.from(data);
-        const status = message[0];
+        const status = message[0] & 0xF0;
+        const channel = (message[0] & 0x0F) + 1;
         const note = message[1];
         const velocity = message[2];
         if (status === NOTE_ON) {
-            this.inNoteOnCallback(note, velocity, 1);
+            this.inNoteOnCallback(note, velocity, channel);
         } else if (status === NOTE_OFF) {
-            this.inNoteOffCallback(note, 1);
+            this.inNoteOffCallback(note, channel);
         } else if (status === CONTROL_CHANGE) {
-            this.inControlChangeCallback(message[1], message[2], 1);
+            this.inControlChangeCallback(message[1], message[2], channel);
         } else if (status === PITCH_BEND) {
-            this.inPitchBendCallback(message[1], 1);
+            const lsb = message[1];
+            const msb = message[2];
+            const value = (msb << 7) | lsb;
+            this.inPitchBendCallback(value, channel);
         } else {
-            this.inUnknownCallback(status, message);
+            this.inUnknownCallback(status, channel, message);
         }
     }
 

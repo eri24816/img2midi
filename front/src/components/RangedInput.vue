@@ -34,3 +34,12 @@ const handleChange = (event: Event) => {
     value1.value = value.value;
 }
 </script>
+
+<style scoped>
+.ranged-input {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+</style>

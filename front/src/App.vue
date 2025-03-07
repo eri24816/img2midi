@@ -1,109 +1,132 @@
 <template>
-    <div>
+    <main>
         <h1>img2midi</h1>
-        
-        <div class="midi-section">
-            <label for="midiInput">MIDI Input Port:</label>
-            <select 
-                id="midiInput" 
-                v-model="selectedInput"
-                @change="handleInputChange"
-            >
-                <option 
-                    v-for="input in midiInputs" 
-                    :key="input.id" 
-                    :value="input.id"
-                >
-                    {{ input.name }}
-                </option>
-            </select>
-            <br>
-            <br>
-            <label for="midiOutput">MIDI Output Port:</label>
-            <select 
-                id="midiOutput" 
-                v-model="selectedOutput"
-                @change="handleOutputChange"
-            >
-                <option 
-                    v-for="output in midiOutputs" 
-                    :key="output.id" 
-                    :value="output.id"
-                >
-                    {{ output.name }}
-                </option>
-            </select>
-        </div>
-
-        <div class="setting">
-            <label for="timeScale">Pixels per second (playback speed)</label>
-            <RangedInput id="timeScale" v-model="timeScale" :min="20" :max="1000" :step="20" />
-        </div>
-
-        <div class="setting">
-            <label for="pixelsPerSemitone">Pixels per semitone</label>
-            <RangedInput id="pixelsPerSemitone" v-model="pixelsPerSemitone" :min="10" :max="400" :step="10" />
-        </div>
-
-        <div class="setting">
-            <label for="channels">Output channels</label>
-            <RangedInput id="channels" v-model="channels" :min="1" :max="16" :step="1" />
-        </div>
-
-        <div class="setting">
-            <label for="pitchVariationFactor">Pitch variation factor</label>
-            <RangedInput id="pitchVariationFactor" v-model="pitchVariationFactor" :min="0" :max="1" :step="0.01" />
-        </div>
-
-        <button @click="handleTest">Test</button>
-
-        Upload image:
-        <input type="file" @change="handleFileUpload" accept="image/*">
-        
         <div class="columns">
-            <div class="column">
-                <table class="image-table">
-                    <tr>
-                        <th>Play</th>
-                        <th>Image</th>
-                        <th>Image size</th>
-                        <th>Duration</th>
-                    </tr>
-                    <tr v-for="item in uploadedImages.values()" :key="item.id">
-                        <td>
-                            <button 
-                                @click="playImage(item)"
-                                :disabled="!item.strokes"
-                                class="play-button"
-                            >
-                                {{ item.strokes ? 'Play' : 'Analyzing...' }}
-                            </button>
-                        </td>
-                        <td><img :src="item.imageUrl" width="200" /></td>
-                        <td>
-                            {{ item.dimensions.width }} x {{ item.dimensions.height }} pixels
-                        </td>
-                        <td>
-                            {{ (item.dimensions.width / timeScale).toFixed(2) }} seconds
-                        </td>
-                    </tr>
-                </table>
-            </div>
-            <div class="column">
-                MIDI output:
-                <div v-for="(message, index) in midiOutLog" :key="index">
-                    {{ message }}
+            
+
+            <div class="settings-section">
+                <div class="setting">
+                    <label for="timeScale">Pixels per second (playback speed)</label>
+                    <RangedInput id="timeScale" v-model="timeScale" :min="20" :max="1000" :step="20" />
+                </div>
+
+                <div class="setting">
+                    <label for="pixelsPerSemitone">Pixels per semitone</label>
+                    <RangedInput id="pixelsPerSemitone" v-model="pixelsPerSemitone" :min="10" :max="400" :step="10" />
+                </div>
+
+                <div class="setting">
+                    <label for="pitchVariationFactor">Pitch variation factor</label>
+                    <RangedInput id="pitchVariationFactor" v-model="pitchVariationFactor" :min="0" :max="1" :step="0.01" />
+                </div>
+
+
+                Upload image:
+                <input type="file" @change="handleFileUpload" accept="image/*">
+                
+                <div class="columns">
+                    <div class="column">
+                        <table class="image-table">
+                            <tr>
+                                <th></th>
+                                <th>Listen to channel</th>
+                                <th>Image</th>
+                                <th>Image size</th>
+                                <th>Duration</th>
+                            </tr>
+                            <tr v-for="item in uploadedImages.values()" :key="item.id">
+                                <td>
+                                    <!-- <div class="select-indicator" :class="{'selected': selectedImage?.id === item.id}"></div> -->
+                                
+                                    <button 
+                                        @click="playImage(item)"
+                                        :disabled="!item.strokes"
+                                        class="play-button"
+                                    >
+                                        {{ item.strokes ? 'Play' : 'Analyzing...' }}
+                                    </button>
+                                </td>
+
+                                <td>
+                                    <input type="number" :class="{'playing-image': item.isPlaying}" v-model="item.listenToChannel" :min="1" :max="16" :step="1" />
+                                </td>
+                                <td><img :src="item.imageUrl" width="200" /></td>
+                                <td>
+                                    {{ item.dimensions.width }} x {{ item.dimensions.height }} pixels
+                                </td>
+                                <td>
+                                    {{ (item.dimensions.width / timeScale).toFixed(2) }} seconds
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
                 </div>
             </div>
-            <div class="column">
-                MIDI input:
-                <div v-for="(message, index) in midiInLog" :key="index">
-                    {{ message }}
+
+            <div class="midi-section">
+            
+                <div class="midi-section-row">
+                    <label for="midiInput">MIDI input port </label>
+                    <select 
+                        id="midiInput" 
+                        v-model="selectedInput"
+                        @change="handleInputChange"
+                    >
+                        <option 
+                            v-for="input in midiInputs" 
+                            :key="input.id" 
+                            :value="input.id"
+                        >
+                            {{ input.name }}
+                        </option>
+                    </select>
+                    
                 </div>
+                <div class="midi-section-row">
+                    <label for="midiInput">MIDI input channels </label>
+                    <CompactMultiSelect id="midiInput" v-model="inputChannels" :items="Array.from({length: 16}, (_, i) => i + 1)" />
+                </div>
+                <div class="midi-section-row">
+                    <label for="midiOutput">MIDI output port </label>
+                    <select 
+                        id="midiOutput" 
+                        v-model="selectedOutput"
+                        @change="handleOutputChange"
+                    >
+                        <option 
+                            v-for="output in midiOutputs" 
+                            :key="output.id" 
+                            :value="output.id"
+                        >
+                            {{ output.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="midi-section-row">
+                    <label for="midiOutput">MIDI output channels </label>
+                    <CompactMultiSelect id="midiOutput" v-model="outputChannels" :items="Array.from({length: 16}, (_, i) => i + 1)" />
+                </div>
+
+                <div class="columns">
+                    <div class="column">
+                        MIDI output:
+                        <div v-for="(message, index) in midiOutLog" :key="index">
+                            {{ message }}
+                        </div>
+                    </div>
+                    <div class="column">
+                        MIDI input:
+                        <div v-for="(message, index) in midiInLog" :key="index">
+                            {{ message }}
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
-        <Footer />
-    </div>
+    </main>
+    <Footer />
 </template>
 
 <script setup lang="ts"> 
@@ -113,10 +136,13 @@ import { ImagePlayer, MultiImagePlayer } from './util/ImagePlayer';
 import { Base64Binary } from './util/base64-binary';
 import Footer from './Footer.vue';
 import RangedInput from './components/RangedInput.vue';
+import CompactMultiSelect from './components/CompactMultiSelect.vue';
 interface ImageItem {
     id: number;
     imageUrl: string;
     dimensions: {width: number, height: number};
+    listenToChannel: number;
+    isPlaying: boolean;
     strokes?: StrokeInfo<Float32Array>[];
 }
 type AnalyzeResponse = StrokeInfo<number[]>[];
@@ -140,16 +166,19 @@ interface StrokeInfo<ParamT> {
 
 const midiInputs = ref<{id: string, name: string}[]>([]);
 const selectedInput = ref<string | null>(null);
+const inputChannels = ref<number[]>(Array.from({length: 16}, (_, i) => i + 1));
 const midiOutputs = ref<{id: string, name: string}[]>([]);
 const selectedOutput = ref<string | null>(null);
+const outputChannels = ref<number[]>([1]);
 const uploadedImages = ref<Map<number, ImageItem>>(new Map());
 const midiOutLog = ref<string[]>([]);
 const midiInLog = ref<string[]>([]);
 const timeScale = ref<number>(100);
 const pixelsPerSemitone = ref<number>(50);
-const channels = ref<number>(16);
 const player = new MultiImagePlayer();
 const pitchVariationFactor = ref<number>(1);
+const selectedImage = ref<ImageItem | null>(null);
+const stopHandles: Map<number, (() => void)[]> = new Map(Array.from({length: 128}, (_, i) => [i, []]));
 
 let midiSender: MidiSender | null = null;
 
@@ -182,7 +211,9 @@ const handleFileUpload = async (event: Event) => {
             dimensions: {
                 width: img.naturalWidth,
                 height: img.naturalHeight
-            }
+            },
+            listenToChannel: 1,
+            isPlaying: false
         };
         uploadedImages.value.set(newItem.id, newItem);
 
@@ -211,6 +242,9 @@ const handleFileUpload = async (event: Event) => {
                 }
                 const strokes = responseJson.map(convertStrokeToFloat32Array);
                 uploadedImages.value.get(newItem.id).strokes = strokes;
+                if(uploadedImages.value.size === 1) {
+                    selectedImage.value = newItem;
+                }
             } catch (error) {
                 console.error('Analysis failed:', error);
             }
@@ -220,21 +254,36 @@ const handleFileUpload = async (event: Event) => {
     img.src = imageUrl;
 }
 
-const playImage = async (item: ImageItem) => {
+const playImage = async (item: ImageItem, note: number=55) => {
     if (!item.strokes) return;
-    // TODO: Implement playback using parameters
+    let lastTime = 0;
+    let playerStopHandles: (() => void)[] = [];
+    let stopped = false;
+    const stopHandle = () => {
+        playerStopHandles.forEach(handle => handle());
+        stopped = true;
+    }
+    stopHandles.get(note)!.push(stopHandle);
+    // sort strokes by start_x
+    item.strokes.sort((a, b) => a.start_x - b.start_x);
     for (const stroke of item.strokes) {
-        const pitch = 55 + Math.round(stroke.start_y / pixelsPerSemitone.value);
+        const pitch = note + Math.max(0, Math.round(stroke.start_y / pixelsPerSemitone.value - 1));
         const posYShift = - Math.round(stroke.start_y / pixelsPerSemitone.value) * pixelsPerSemitone.value;
         const time = stroke.start_x / timeScale.value;
         const semitonePerPixelForVariation = pitchVariationFactor.value / pixelsPerSemitone.value;
-        setTimeout(() => {
-            player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift);
-        }, time* 1000);
+        const delay = time - lastTime;
+        if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay * 1000));
+        }
+        lastTime = time;
+        if (stopped) break;
+        playerStopHandles.push(player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift));
     }
+    stopHandles.get(note)!.splice(stopHandles.get(note)!.indexOf(stopHandle), 1);
 }
 
 onMounted(async () => {
+    player.setChannels(outputChannels.value);
     midiSender = await createMidiSender();
     const inPorts = midiSender.getInputs();
     for (const input of inPorts) {
@@ -273,11 +322,24 @@ onMounted(async () => {
 const handleInNoteOn = (note: number, velocity: number, channel: number) => {
     midiInLog.value.push(`note on ${channel} ${note} ${velocity}`);
     trimMidiLog();
+
+    // get all image that listen to this channel
+    const images = Array.from(uploadedImages.value.values()).filter(item => item.listenToChannel === channel);
+    for (const image of images) {
+        image.isPlaying = true;
+        playImage(image, note);
+    }
 }
 
 const handleInNoteOff = (note: number, channel: number) => {
     midiInLog.value.push(`note off ${channel} ${note}`);
     trimMidiLog();
+    // get all image that listen to this channel
+    const images = Array.from(uploadedImages.value.values()).filter(item => item.listenToChannel === channel);
+    for (const image of images) {
+        image.isPlaying = false;
+        stopHandles.get(note)!.forEach(handle => handle());
+    }
 }
 
 const handleInControlChange = (control: number, value: number, channel: number) => {
@@ -290,8 +352,8 @@ const handleInPitchBend = (value: number, channel: number) => {
     trimMidiLog();
 }
 
-const handleInUnknown = (status: number, message: number[]) => {
-    midiInLog.value.push(`unknown ${status} ${message}`);
+const handleInUnknown = (status: number, channel: number, message: number[]) => {
+    midiInLog.value.push(`unknown ${status} ${channel} ${message}`);
     trimMidiLog();
 }
 
@@ -316,12 +378,12 @@ const handleOutPitchBend = (value: number, channel: number) => {
 }
 
 const trimMidiLog = () => {
-    midiOutLog.value = midiOutLog.value.slice(-10);
-    midiInLog.value = midiInLog.value.slice(-10);
+    midiOutLog.value = midiOutLog.value.slice(-25);
+    midiInLog.value = midiInLog.value.slice(-25);
 }
 
-watch(channels, (newChannels) => {
-    player.setChannels(Array.from({length: newChannels}, (_, i) => i + 1)); // from 1 to newChannels
+watch(outputChannels, (newChannels) => {
+    player.setChannels(newChannels);
 });
 
 const handleTest = async () => {
@@ -336,45 +398,79 @@ const handleTest = async () => {
 </script>
 
 <style scoped>
+main {
+    margin: 40px;
+}
+
 .midi-section {
     margin-top: 20px;
     margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 20px;
 }
 
-select {
-    margin-left: 10px;
-    padding: 5px;
-    min-width: 200px;
+.midi-section-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
 }
 
-.image-table {
-    margin-top: 20px;
-    border-collapse: collapse;
-}
 
-.image-table td {
-    padding: 10px;
-    border: 1px solid #ddd;
-}
-
+/* Specific button styles */
 .play-button {
+    background-color: #37683c;
+    color: #ffffff;
     padding: 8px 16px;
     cursor: pointer;
+    border: none;
+}
+
+.play-button:hover:not(:disabled) {
+    background-color: rgb(87, 146, 108);
 }
 
 .play-button:disabled {
-    opacity: 0.5;
+    background-color: #2a3830;
+    opacity: 0.7;
     cursor: not-allowed;
+}
+
+/* Table styles */
+.image-table {
+    margin-top: 20px;
+    border-collapse: collapse;
+    background-color: #1a1a1a;
+}
+
+.image-table td, .image-table th {
+    padding: 10px;
+    border: 1px solid #4e4e5a;
+}
+
+.image-table th {
+    background-color: #2a2a2a;
+}
+
+.image-table td{
+
+    position: relative;
 }
 
 .columns {
     display: flex;
     flex-direction: row;
     justify-content: flex-start;
+    gap: 40px;
 }
 
 .column {
     margin: 10px;
+    min-width: 200px;
 }
 
 footer {
@@ -399,4 +495,27 @@ footer {
 .setting label {
     min-width: 250px;
 }
+label {
+    min-width: 150px;
+}
+.select-indicator {
+    position: absolute;
+    top: 0;
+    left: -10px;
+    width: 10px;
+    bottom: 0;
+    background-color: #41a84b;
+    border-radius: 10px 0 0 10px;
+    display: none;
+}
+
+.selected.select-indicator {
+    display: block;
+}
+
+.playing-image {
+    background-color: #41a84b;
+}
+
+
 </style>
