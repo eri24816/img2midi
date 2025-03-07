@@ -3,6 +3,22 @@
         <h1>img2midi</h1>
         
         <div class="midi-section">
+            <label for="midiInput">MIDI Input Port:</label>
+            <select 
+                id="midiInput" 
+                v-model="selectedInput"
+                @change="handleInputChange"
+            >
+                <option 
+                    v-for="input in midiInputs" 
+                    :key="input.id" 
+                    :value="input.id"
+                >
+                    {{ input.name }}
+                </option>
+            </select>
+            <br>
+            <br>
             <label for="midiOutput">MIDI Output Port:</label>
             <select 
                 id="midiOutput" 
@@ -39,6 +55,8 @@
             <RangedInput id="pitchVariationFactor" v-model="pitchVariationFactor" :min="0" :max="1" :step="0.01" />
         </div>
 
+        <button @click="handleTest">Test</button>
+
         Upload image:
         <input type="file" @change="handleFileUpload" accept="image/*">
         
@@ -72,7 +90,14 @@
                 </table>
             </div>
             <div class="column">
-                <div v-for="(message, index) in midiLog" :key="index">
+                MIDI output:
+                <div v-for="(message, index) in midiOutLog" :key="index">
+                    {{ message }}
+                </div>
+            </div>
+            <div class="column">
+                MIDI input:
+                <div v-for="(message, index) in midiInLog" :key="index">
                     {{ message }}
                 </div>
             </div>
@@ -113,10 +138,13 @@ interface StrokeInfo<ParamT> {
     }
 }
 
+const midiInputs = ref<{id: string, name: string}[]>([]);
+const selectedInput = ref<string | null>(null);
 const midiOutputs = ref<{id: string, name: string}[]>([]);
 const selectedOutput = ref<string | null>(null);
 const uploadedImages = ref<Map<number, ImageItem>>(new Map());
-const midiLog = ref<string[]>([]);
+const midiOutLog = ref<string[]>([]);
+const midiInLog = ref<string[]>([]);
 const timeScale = ref<number>(100);
 const pixelsPerSemitone = ref<number>(50);
 const channels = ref<number>(16);
@@ -128,6 +156,12 @@ let midiSender: MidiSender | null = null;
 const handleOutputChange = () => {
     if (midiSender && selectedOutput.value) {
         midiSender.setOutPort(selectedOutput.value);
+    }
+}
+
+const handleInputChange = () => {
+    if (midiSender && selectedInput.value) {
+        midiSender.setInPort(selectedInput.value);
     }
 }
 
@@ -202,6 +236,17 @@ const playImage = async (item: ImageItem) => {
 
 onMounted(async () => {
     midiSender = await createMidiSender();
+    const inPorts = midiSender.getInputs();
+    for (const input of inPorts) {
+        midiInputs.value.push({
+            id: input[0],
+            name: input[1].name || '',
+        });
+    }
+    if (midiInputs.value.length > 0) {
+        selectedInput.value = midiInputs.value[0].id;
+        handleInputChange();
+    }
     const outPorts = midiSender.getOutputs();
     for (const output of outPorts) {
         midiOutputs.value.push({
@@ -213,39 +258,81 @@ onMounted(async () => {
         selectedOutput.value = midiOutputs.value[0].id;
         handleOutputChange();
     }
-    midiSender.noteOnCallback = handleNoteOn;
-    midiSender.noteOffCallback = handleNoteOff;
-    midiSender.controlChangeCallback = handleControlChange;
-    midiSender.pitchBendCallback = handlePitchBend;
+    midiSender.inNoteOnCallback = handleInNoteOn;
+    midiSender.inNoteOffCallback = handleInNoteOff;
+    midiSender.inControlChangeCallback = handleInControlChange;
+    midiSender.inPitchBendCallback = handleInPitchBend;
+    midiSender.inUnknownCallback = handleInUnknown;
+
+    midiSender.outNoteOnCallback = handleOutNoteOn;
+    midiSender.outNoteOffCallback = handleOutNoteOff;
+    midiSender.outControlChangeCallback = handleOutControlChange;
+    midiSender.outPitchBendCallback = handleOutPitchBend;
 });
 
-const handleNoteOn = (note: number, velocity: number, channel: number) => {
-    midiLog.value.push(`note on ${channel} ${note} ${velocity}`);
+const handleInNoteOn = (note: number, velocity: number, channel: number) => {
+    midiInLog.value.push(`note on ${channel} ${note} ${velocity}`);
     trimMidiLog();
 }
 
-const handleNoteOff = (note: number, channel: number) => {
-    midiLog.value.push(`note off ${channel} ${note}`);
+const handleInNoteOff = (note: number, channel: number) => {
+    midiInLog.value.push(`note off ${channel} ${note}`);
     trimMidiLog();
 }
 
-const handleControlChange = (control: number, value: number, channel: number) => {
-    midiLog.value.push(`control change ${channel} ${control} ${value}`);
+const handleInControlChange = (control: number, value: number, channel: number) => {
+    midiInLog.value.push(`control change ${channel} ${control} ${value}`);
     trimMidiLog();
 }
 
-const handlePitchBend = (value: number, channel: number) => {
-    midiLog.value.push(`pitch bend ${channel} ${value}`);
+const handleInPitchBend = (value: number, channel: number) => {
+    midiInLog.value.push(`pitch bend ${channel} ${value}`);
+    trimMidiLog();
+}
+
+const handleInUnknown = (status: number, message: number[]) => {
+    midiInLog.value.push(`unknown ${status} ${message}`);
+    trimMidiLog();
+}
+
+const handleOutNoteOn = (note: number, velocity: number, channel: number) => {
+    midiOutLog.value.push(`note on ${channel} ${note} ${velocity}`);
+    trimMidiLog();
+}
+
+const handleOutNoteOff = (note: number, channel: number) => {
+    midiOutLog.value.push(`note off ${channel} ${note}`);
+    trimMidiLog();
+}
+
+const handleOutControlChange = (control: number, value: number, channel: number) => {
+    midiOutLog.value.push(`control change ${channel} ${control} ${value}`);
+    trimMidiLog();
+}
+
+const handleOutPitchBend = (value: number, channel: number) => {
+    midiOutLog.value.push(`pitch bend ${channel} ${value}`);
     trimMidiLog();
 }
 
 const trimMidiLog = () => {
-    midiLog.value = midiLog.value.slice(-10);
+    midiOutLog.value = midiOutLog.value.slice(-10);
+    midiInLog.value = midiInLog.value.slice(-10);
 }
 
 watch(channels, (newChannels) => {
     player.setChannels(Array.from({length: newChannels}, (_, i) => i + 1)); // from 1 to newChannels
 });
+
+const handleTest = async () => {
+    // send pitch bend -8192 to 8191 with 2ms interval
+    // midiSender.sendNoteOn(60, 127, 1);
+    // for (let i = -8192; i <= 8191; i++) {
+    //     midiSender.sendPitchBend(i, 1);
+    //     await new Promise(resolve => setTimeout(resolve, 2));
+    // }
+    // midiSender.sendNoteOff(60, 1);
+}
 </script>
 
 <style scoped>

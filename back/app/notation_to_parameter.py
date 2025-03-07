@@ -231,7 +231,7 @@ def stroke_to_parameters(stroke, hsv_image:np.ndarray, binary_image:np.ndarray, 
         parameters['pos_x'].append(2*(point.x + x_shift))
         parameters['pos_y'].append(2*(img_height - (point.y + y_shift)))
 
-    return dict(parameters)
+    return parameters
 
 
 @dataclass
@@ -331,7 +331,7 @@ def notation_to_parameters(image_input) -> list[StrokeInfo]:
                 end_x=parameters['pos_x'][-1],
                 end_y=parameters['pos_y'][-1],
                 length=len(parameters['pos_x']),
-                parameters=parameters
+                parameters=dict(parameters)
             ))
     
 

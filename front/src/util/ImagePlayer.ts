@@ -118,7 +118,6 @@ export class ImagePlayer {
 
                 if (key === 'pos_y') {
                     const pitchBendSemitone = (value![idx] + posYShift) * pitchVariationFactor
-                    debugger
                     const pitchBendValue = Math.round(pitchBendSemitone * 8192 / 12);
                     this.midiSender.sendPitchBend(pitchBendValue, this.channel);
                     continue;
