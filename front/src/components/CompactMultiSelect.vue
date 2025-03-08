@@ -30,7 +30,9 @@ const emit = defineEmits<{
 // if items change, remove the modelValue if it is not in the new items
 watch(() => props.items, (newItems) => {
     const filteredValue = props.modelValue.filter((item) => newItems.includes(item));
-    emit('update:modelValue', filteredValue);
+    if (filteredValue.length !== props.modelValue.length) {
+        emit('update:modelValue', filteredValue);
+    }
 });
 
 const toggleItem = (item: number) => {
