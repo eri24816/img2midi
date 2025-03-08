@@ -21,62 +21,62 @@
                 </div>
 
 
-                Upload image
-                <input type="file" @change="handleFileUpload" accept="image/*">
                 
-                <div class="columns">
-                    <div class="column">
-                        <table class="image-table">
-                            <tr>
-                                <th></th>
-                                <th>Listen to channel</th>
-                                <th>Output channels</th>
-                                <th>Image</th>
-                                <th>Image size</th>
-                                <th>Duration</th>
-                            </tr>
-                            <tr v-for="item in uploadedImages.values()" :key="item.id">
-                                <td>
-                                    <!-- <div class="select-indicator" :class="{'selected': selectedImage?.id === item.id}"></div> -->
-                                
+                <div>
+
+                    <FileInput @selected="handleFileUpload">
+                        ➕ Upload image
+                    </FileInput>
+                    <table class="image-table">
+                        <tr>
+                            <th></th>
+                            <th>Listen to channel</th>
+                            <th>Output channels</th>
+                            <th>Image</th>
+                            <th>Image size</th>
+                            <th>Duration</th>
+                        </tr>
+                        <tr v-for="item in uploadedImages.values()" :key="item.id">
+                            <td>
+                                <!-- <div class="select-indicator" :class="{'selected': selectedImage?.id === item.id}"></div> -->
+                            
+                                <button 
+                                    @click="playImage(item)"
+                                    :disabled="!item.strokes"
+                                    class="play-button"
+                                >
+                                    {{ item.strokes ? 'Play' : 'Analyzing...' }}
+                                </button>
+                            </td>
+
+                            <td>
+                                <input type="number" :class="{'playing-image': item.isPlaying}" v-model="item.listenToChannel" :min="1" :max="16" :step="1" />
+                            </td>
+                            <td>
+                                <CompactMultiSelect id="outputChannels" v-model="item.outputChannels" :items="outputChannels" />
+                            </td>
+
+                            <td>
+                                <div style="display: flex; align-items: center;">
+                                    <img :src="item.imageUrl" width="180" />
                                     <button 
-                                        @click="playImage(item)"
-                                        :disabled="!item.strokes"
-                                        class="play-button"
+                                        @click="deleteImage(item.id)" 
+                                        class="delete-button"
+                                        style="margin-left: 8px;"
                                     >
-                                        {{ item.strokes ? 'Play' : 'Analyzing...' }}
+                                        🗑️
                                     </button>
-                                </td>
-
-                                <td>
-                                    <input type="number" :class="{'playing-image': item.isPlaying}" v-model="item.listenToChannel" :min="1" :max="16" :step="1" />
-                                </td>
-                                <td>
-                                    <CompactMultiSelect id="outputChannels" v-model="item.outputChannels" :items="outputChannels" />
-                                </td>
-
-                                <td>
-                                    <div style="display: flex; align-items: center;">
-                                        <img :src="item.imageUrl" width="180" />
-                                        <button 
-                                            @click="deleteImage(item.id)" 
-                                            class="delete-button"
-                                            style="margin-left: 8px;"
-                                        >
-                                            🗑️
-                                        </button>
-                                    </div>
-                                </td>
-                                
-                                <td>
-                                    {{ item.dimensions.width }} x {{ item.dimensions.height }} pixels
-                                </td>
-                                <td>
-                                    {{ (item.dimensions.width / timeScale).toFixed(2) }} seconds
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
+                                </div>
+                            </td>
+                            
+                            <td>
+                                {{ item.dimensions.width }} x {{ item.dimensions.height }} pixels
+                            </td>
+                            <td>
+                                {{ (item.dimensions.width / timeScale).toFixed(2) }} seconds
+                            </td>
+                        </tr>
+                    </table>
 
                 </div>
             </div>
@@ -149,11 +149,11 @@
 <script setup lang="ts"> 
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue';
 import { createMidiSender, MidiSender } from './util/MidiSender';
-import { ImagePlayer, MultiImagePlayer } from './util/ImagePlayer';
-import { Base64Binary } from './util/base64-binary';
+import { MultiImagePlayer } from './util/ImagePlayer';
 import Footer from './Footer.vue';
 import RangedInput from './components/RangedInput.vue';
 import CompactMultiSelect from './components/CompactMultiSelect.vue';
+import FileInput from './components/FileInput.vue';
 interface ImageItem {
     id: number;
     imageUrl: string;
@@ -274,8 +274,7 @@ const handleInputChange = () => {
     }
 }
 
-const handleFileUpload = async (event: Event) => {
-    const file = (event.target as HTMLInputElement).files?.[0];
+const handleFileUpload = async (file: File) => {
     if (!file) return;
 
     // Convert to base64 first
