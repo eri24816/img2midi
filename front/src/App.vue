@@ -54,7 +54,20 @@
                                 <td>
                                     <CompactMultiSelect id="outputChannels" v-model="item.outputChannels" :items="outputChannels" />
                                 </td>
-                                <td><img :src="item.imageUrl" width="200" /></td>
+
+                                <td>
+                                    <div style="display: flex; align-items: center;">
+                                        <img :src="item.imageUrl" width="180" />
+                                        <button 
+                                            @click="deleteImage(item.id)" 
+                                            class="delete-button"
+                                            style="margin-left: 8px;"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </td>
+                                
                                 <td>
                                     {{ item.dimensions.width }} x {{ item.dimensions.height }} pixels
                                 </td>
@@ -134,7 +147,7 @@
 </template>
 
 <script setup lang="ts"> 
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, onBeforeUnmount } from 'vue';
 import { createMidiSender, MidiSender } from './util/MidiSender';
 import { ImagePlayer, MultiImagePlayer } from './util/ImagePlayer';
 import { Base64Binary } from './util/base64-binary';
@@ -187,108 +200,30 @@ const stopHandles: Map<number, (() => void)[]> = new Map(Array.from({length: 128
 
 let midiSender: MidiSender | null = null;
 
-const handleOutputChange = () => {
-    if (midiSender && selectedOutput.value) {
-        midiSender.setOutPort(selectedOutput.value);
-    }
+const mapToRecord = <T>(map: Map<number, T>): Record<number, T> => {
+    return Object.fromEntries(map.entries());
 }
 
-const handleInputChange = () => {
-    if (midiSender && selectedInput.value) {
-        midiSender.setInPort(selectedInput.value);
-    }
+const recordToMap = <T>(record: Record<number, T>): Map<number, T> => {
+    return new Map(Object.entries(record).map(([key, value]) => [Number(key), value]));
 }
 
-const handleFileUpload = async (event: Event) => {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-
-    // Create URL for image display
-    const imageUrl = URL.createObjectURL(file);
-    
-    // Create temporary image to get dimensions
-    const img = new Image();
-    img.onload = () => {
-        // Add to images array with dimensions
-        const newItem: ImageItem = { 
-            imageUrl, 
-            id: Math.random(), 
-            dimensions: {
-                width: img.naturalWidth,
-                height: img.naturalHeight
-            },
-            listenToChannel: 1,
-            outputChannels: outputChannels.value.slice(0, 1),
-            isPlaying: false
-        };
-        uploadedImages.value.set(newItem.id, newItem);
-
-        // Convert to base64
-        const reader = new FileReader();
-        reader.onload = async () => {
-            const base64Data = (reader.result as string).split(',')[1];
-
-            try {
-                // Send to backend
-                const response = await fetch('/api/analyze-notation', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: base64Data })
-                });
-                
-                const responseJson: AnalyzeResponse = await response.json();
-                function convertStrokeToFloat32Array(stroke: StrokeInfo<number[]>): StrokeInfo<Float32Array> {
-                    const result: StrokeInfo<Float32Array> = {
-                        ...stroke,
-                        parameters: Object.fromEntries(
-                            Object.entries(stroke.parameters).map(([key, value]) => [key, new Float32Array(value)])
-                        ) as StrokeInfo<Float32Array>['parameters']
-                    };
-                    return result;
-                }
-                const strokes = responseJson.map(convertStrokeToFloat32Array);
-                uploadedImages.value.get(newItem.id).strokes = strokes;
-                if(uploadedImages.value.size === 1) {
-                    selectedImage.value = newItem;
-                }
-            } catch (error) {
-                console.error('Analysis failed:', error);
-            }
-        };
-        reader.readAsDataURL(file);
-    };
-    img.src = imageUrl;
+const saveData = async () => {
+    localStorage.setItem('uploadedImages', JSON.stringify(mapToRecord(uploadedImages.value)));
+    // save all image data
+    const imageBase64s: Record<number, string> = {};
 }
 
-const playImage = async (item: ImageItem, note: number=55) => {
-    if (!item.strokes) return;
-    let lastTime = 0;
-    let playerStopHandles: (() => void)[] = [];
-    let stopped = false;
-    const stopHandle = () => {
-        playerStopHandles.forEach(handle => handle());
-        stopped = true;
+const loadData = () => {
+    // localStorage.removeItem('uploadedImages');
+    const savedImages = localStorage.getItem('uploadedImages');
+    if (savedImages) {
+        uploadedImages.value = recordToMap(JSON.parse(savedImages));
     }
-    stopHandles.get(note)!.push(stopHandle);
-    // sort strokes by start_x
-    item.strokes.sort((a, b) => a.start_x - b.start_x);
-    for (const stroke of item.strokes) {
-        const pitch = note + Math.max(0, Math.round(stroke.start_y / pixelsPerSemitone.value - 1));
-        const posYShift = - Math.round(stroke.start_y / pixelsPerSemitone.value) * pixelsPerSemitone.value;
-        const time = stroke.start_x / timeScale.value;
-        const semitonePerPixelForVariation = pitchVariationFactor.value / pixelsPerSemitone.value;
-        const delay = time - lastTime;
-        if (delay > 0) {
-            await new Promise(resolve => setTimeout(resolve, delay * 1000));
-        }
-        lastTime = time;
-        if (stopped) break;
-        playerStopHandles.push(player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift, item.outputChannels));
-    }
-    stopHandles.get(note)!.splice(stopHandles.get(note)!.indexOf(stopHandle), 1);
 }
 
 onMounted(async () => {
+    window.addEventListener("beforeunload", saveData);
     player.setChannels(outputChannels.value);
     midiSender = await createMidiSender();
     const inPorts = midiSender.getInputs();
@@ -323,7 +258,112 @@ onMounted(async () => {
     midiSender.outNoteOffCallback = handleOutNoteOff;
     midiSender.outControlChangeCallback = handleOutControlChange;
     midiSender.outPitchBendCallback = handleOutPitchBend;
+
+    loadData();
 });
+
+const handleOutputChange = () => {
+    if (midiSender && selectedOutput.value) {
+        midiSender.setOutPort(selectedOutput.value);
+    }
+}
+
+const handleInputChange = () => {
+    if (midiSender && selectedInput.value) {
+        midiSender.setInPort(selectedInput.value);
+    }
+}
+
+const handleFileUpload = async (event: Event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+
+    // Convert to base64 first
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64Data = reader.result as string;
+        
+        // Create temporary image to get dimensions
+        const img = new Image();
+        img.onload = async () => {
+            // Add to images array with dimensions
+            const newItem: ImageItem = { 
+                imageUrl: base64Data, // Use base64 string directly
+                id: Math.random(), 
+                dimensions: {
+                    width: img.naturalWidth,
+                    height: img.naturalHeight
+                },
+                listenToChannel: 1,
+                outputChannels: outputChannels.value.slice(0, 1),
+                isPlaying: false
+            };
+            uploadedImages.value.set(newItem.id, newItem);
+
+            try {
+                // Send to backend - extract base64 data part
+                const base64ForApi = base64Data.split(',')[1];
+                const response = await fetch('/api/analyze-notation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64ForApi })
+                });
+                
+                const responseJson: AnalyzeResponse = await response.json();
+                function convertStrokeToFloat32Array(stroke: StrokeInfo<number[]>): StrokeInfo<Float32Array> {
+                    const result: StrokeInfo<Float32Array> = {
+                        ...stroke,
+                        parameters: Object.fromEntries(
+                            Object.entries(stroke.parameters).map(([key, value]) => [key, new Float32Array(value)])
+                        ) as StrokeInfo<Float32Array>['parameters']
+                    };
+                    return result;
+                }
+                const strokes = responseJson.map(convertStrokeToFloat32Array);
+                uploadedImages.value.get(newItem.id)!.strokes = strokes;
+                if(uploadedImages.value.size === 1) {
+                    selectedImage.value = newItem;
+                }
+            } catch (error) {
+                console.error('Analysis failed:', error);
+            }
+        };
+        img.src = base64Data;
+    };
+    reader.readAsDataURL(file);
+}
+
+const deleteImage = (id: number) => {
+    uploadedImages.value.delete(id);
+}
+
+const playImage = async (item: ImageItem, note: number=55) => {
+    if (!item.strokes) return;
+    let lastTime = 0;
+    let playerStopHandles: (() => void)[] = [];
+    let stopped = false;
+    const stopHandle = () => {
+        playerStopHandles.forEach(handle => handle());
+        stopped = true;
+    }
+    stopHandles.get(note)!.push(stopHandle);
+    // sort strokes by start_x
+    item.strokes.sort((a, b) => a.start_x - b.start_x);
+    for (const stroke of item.strokes) {
+        const pitch = note + Math.max(0, Math.round(stroke.start_y / pixelsPerSemitone.value - 1));
+        const posYShift = - Math.round(stroke.start_y / pixelsPerSemitone.value) * pixelsPerSemitone.value;
+        const time = stroke.start_x / timeScale.value;
+        const semitonePerPixelForVariation = pitchVariationFactor.value / pixelsPerSemitone.value;
+        const delay = time - lastTime;
+        if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay * 1000));
+        }
+        lastTime = time;
+        if (stopped) break;
+        playerStopHandles.push(player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift, item.outputChannels));
+    }
+    stopHandles.get(note)!.splice(stopHandles.get(note)!.indexOf(stopHandle), 1);
+}
 
 const handleInNoteOn = (note: number, velocity: number, channel: number) => {
     if (!inputChannels.value.includes(channel)) {
@@ -471,7 +511,7 @@ main {
 .image-table td, .image-table th {
     padding: 10px;
     border: 1px solid #4e4e5a;
-    max-width: 240px;
+    max-width: 250px;
 }
 
 
