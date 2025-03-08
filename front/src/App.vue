@@ -320,6 +320,9 @@ onMounted(async () => {
 });
 
 const handleInNoteOn = (note: number, velocity: number, channel: number) => {
+    if (!inputChannels.value.includes(channel)) {
+        return;
+    }
     midiInLog.value.push(`note on ${channel} ${note} ${velocity}`);
     trimMidiLog();
 
@@ -332,6 +335,9 @@ const handleInNoteOn = (note: number, velocity: number, channel: number) => {
 }
 
 const handleInNoteOff = (note: number, channel: number) => {
+    if (!inputChannels.value.includes(channel)) {
+        return;
+    }
     midiInLog.value.push(`note off ${channel} ${note}`);
     trimMidiLog();
     // get all image that listen to this channel
@@ -343,16 +349,25 @@ const handleInNoteOff = (note: number, channel: number) => {
 }
 
 const handleInControlChange = (control: number, value: number, channel: number) => {
+    if (!inputChannels.value.includes(channel)) {
+        return;
+    }
     midiInLog.value.push(`control change ${channel} ${control} ${value}`);
     trimMidiLog();
 }
 
 const handleInPitchBend = (value: number, channel: number) => {
+    if (!inputChannels.value.includes(channel)) {
+        return;
+    }
     midiInLog.value.push(`pitch bend ${channel} ${value}`);
     trimMidiLog();
 }
 
 const handleInUnknown = (status: number, channel: number, message: number[]) => {
+    if (!inputChannels.value.includes(channel)) {
+        return;
+    }
     midiInLog.value.push(`unknown ${status} ${channel} ${message}`);
     trimMidiLog();
 }
