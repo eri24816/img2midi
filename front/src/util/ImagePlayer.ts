@@ -38,8 +38,12 @@ export class MultiImagePlayer {
         this.channels = channels;
     }
 
-    getOneFreeChannel(): number {
-        const freeChannels = this.channels.filter(channel => !this.players.some(player => player.channel === channel));
+    getOneFreeChannel(allowedChannels: number[]|null = null): number {
+        if (allowedChannels === null) {
+            allowedChannels = this.channels;
+        }
+
+        const freeChannels = allowedChannels.filter(channel => !this.players.some(player => player.channel === channel));
         if (freeChannels.length === 0) {
             // kick player with the lowest remaining time
             let kickedPlayer: ImagePlayer | null = null;
@@ -58,8 +62,8 @@ export class MultiImagePlayer {
     constructor() {
     }
 
-    play(parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1, posYShift: number = 0) {
-        const channel = this.getOneFreeChannel();
+    play(parameters: Record<string, Float32Array>, midiSender: MidiSender, length: number, pitch: number, timeScale: number = 16.666, pitchVariationFactor: number = 1, posYShift: number = 0, allowedChannels: number[]|null = null) {
+        const channel = this.getOneFreeChannel(allowedChannels);
         const player = new ImagePlayer(channel);
         this.players.push(player);
         player.play(channel, parameters, midiSender, length, pitch, timeScale, pitchVariationFactor, posYShift).then(() => {

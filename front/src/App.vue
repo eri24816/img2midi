@@ -21,7 +21,7 @@
                 </div>
 
 
-                Upload image:
+                Upload image
                 <input type="file" @change="handleFileUpload" accept="image/*">
                 
                 <div class="columns">
@@ -30,6 +30,7 @@
                             <tr>
                                 <th></th>
                                 <th>Listen to channel</th>
+                                <th>Output channels</th>
                                 <th>Image</th>
                                 <th>Image size</th>
                                 <th>Duration</th>
@@ -49,6 +50,9 @@
 
                                 <td>
                                     <input type="number" :class="{'playing-image': item.isPlaying}" v-model="item.listenToChannel" :min="1" :max="16" :step="1" />
+                                </td>
+                                <td>
+                                    <CompactMultiSelect id="outputChannels" v-model="item.outputChannels" :items="outputChannels" />
                                 </td>
                                 <td><img :src="item.imageUrl" width="200" /></td>
                                 <td>
@@ -142,6 +146,7 @@ interface ImageItem {
     imageUrl: string;
     dimensions: {width: number, height: number};
     listenToChannel: number;
+    outputChannels: number[];
     isPlaying: boolean;
     strokes?: StrokeInfo<Float32Array>[];
 }
@@ -178,7 +183,7 @@ const pixelsPerSemitone = ref<number>(50);
 const player = new MultiImagePlayer();
 const pitchVariationFactor = ref<number>(1);
 const selectedImage = ref<ImageItem | null>(null);
-const stopHandles: Map<number, (() => void)[]> = new Map(Array.from({length: 128}, (_, i) => [i, []]));
+const stopHandles: Map<number, (() => void)[]> = new Map(Array.from({length: 128}, (_, i): [number, (() => void)[]] => [i, []]));
 
 let midiSender: MidiSender | null = null;
 
@@ -213,6 +218,7 @@ const handleFileUpload = async (event: Event) => {
                 height: img.naturalHeight
             },
             listenToChannel: 1,
+            outputChannels: outputChannels.value.slice(0, 1),
             isPlaying: false
         };
         uploadedImages.value.set(newItem.id, newItem);
@@ -277,7 +283,7 @@ const playImage = async (item: ImageItem, note: number=55) => {
         }
         lastTime = time;
         if (stopped) break;
-        playerStopHandles.push(player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift));
+        playerStopHandles.push(player.play(stroke.parameters, midiSender, stroke.length, pitch, timeScale.value, semitonePerPixelForVariation, posYShift, item.outputChannels));
     }
     stopHandles.get(note)!.splice(stopHandles.get(note)!.indexOf(stopHandle), 1);
 }
@@ -414,7 +420,7 @@ const handleTest = async () => {
 
 <style scoped>
 main {
-    margin: 40px;
+    margin: 40px 100px;
 }
 
 .midi-section {
@@ -465,7 +471,9 @@ main {
 .image-table td, .image-table th {
     padding: 10px;
     border: 1px solid #4e4e5a;
+    max-width: 240px;
 }
+
 
 .image-table th {
     background-color: #2a2a2a;
@@ -479,7 +487,7 @@ main {
 .columns {
     display: flex;
     flex-direction: row;
-    justify-content: flex-start;
+    justify-content: stretch;
     gap: 40px;
 }
 

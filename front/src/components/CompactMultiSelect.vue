@@ -14,22 +14,42 @@
 </template>
 
 <script setup lang="ts">
+import { watch } from 'vue';
+
 const props = defineProps<{
     items: number[];
     modelValue: number[];
+    minSize?: number;
+    maxSize?: number;
 }>();
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: number[]): void;
 }>();
 
+// if items change, remove the modelValue if it is not in the new items
+watch(() => props.items, (newItems) => {
+    const filteredValue = props.modelValue.filter((item) => newItems.includes(item));
+    emit('update:modelValue', filteredValue);
+});
+
 const toggleItem = (item: number) => {
     const newValue = [...props.modelValue];
     const index = newValue.indexOf(item);
     
     if (index === -1) {
+        // Check if adding would exceed maxSize
+        if (props.maxSize !== undefined && newValue.length >= props.maxSize) {
+            return; // Don't add if it would exceed maxSize
+        }
         newValue.push(item);
+        // sort the array with the order of the original array
+        newValue.sort((a, b) => props.items.indexOf(a) - props.items.indexOf(b));
     } else {
+        // Check if removing would go below minSize
+        if (props.minSize !== undefined && newValue.length <= props.minSize) {
+            return; // Don't remove if it would go below minSize
+        }
         newValue.splice(index, 1);
     }
     
